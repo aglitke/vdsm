@@ -600,12 +600,15 @@ class StoragePool(Securable):
             raise se.InvalidParameterException("masterDomain", msdUUID)
 
         # Check the domains before pool creation
+        domains = []
+        msdVersion = None
         for sdUUID in domList:
             try:
                 domain = sdCache.produce(sdUUID)
                 domain.validate()
                 if sdUUID == msdUUID:
                     msd = domain
+                    msdVersion = msd.getVersion()
             except se.StorageException:
                 self.log.error("Unexpected error", exc_info=True)
                 raise se.StorageDomainAccessError(sdUUID)
@@ -617,6 +620,13 @@ class StoragePool(Securable):
                 # Non ISO domains have only 1 pool
                 if len(spUUIDs) > 0:
                     raise se.StorageDomainAlreadyAttached(spUUIDs[0], sdUUID)
+            domains.append(domain)
+
+        for domain in domains:
+            if domain.isData() and (domain.getVersion() != msdVersion):
+                raise se.MixedSDVersionError(domain.sdUUID,
+                                             domain.getVersion(), msd.sdUUID,
+                                             msdVersion)
 
         fileUtils.createdir(self.poolPath)
         self._acquireTemporaryClusterLock(msdUUID, leaseParams)
