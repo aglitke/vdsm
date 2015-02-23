@@ -728,6 +728,10 @@ class BindingXMLRPC(object):
         domain = API.StorageDomain(sdUUID)
         return domain.validate()
 
+    def domainGarbageCollect(self, sdUUID):
+        sdm = API.SDM()
+        return sdm.garbageCollectStorageDomain(sdUUID)
+
     def imageDelete(self, sdUUID, spUUID,
                     imgUUID, postZero=False, force=False):
         image = API.Image(imgUUID, spUUID, sdUUID)
@@ -737,6 +741,14 @@ class BindingXMLRPC(object):
                            postZero=False, force=False):
         image = API.Image(imgUUID, spUUID, sdUUID)
         return image.deleteVolumes(volumes, postZero, force)
+
+    def volumeRemove(self, sdUUID, imgUUID, volUUID):
+        sdm = API.SDM()
+        return sdm.removeVolume(sdUUID, imgUUID, volUUID)
+
+    def imageRemove(self, sdUUID, imgUUID):
+        sdm = API.SDM()
+        return sdm.removeImage(sdUUID, imgUUID)
 
     def imageMergeSnapshots(self, sdUUID, spUUID, vmUUID, imgUUID,
                             ancestor, successor, postZero=False):
@@ -1138,6 +1150,8 @@ class BindingXMLRPC(object):
                 (self.domainSetDescription, 'setStorageDomainDescription'),
                 (self.domainValidate, 'validateStorageDomain'),
                 (self.imageDelete, 'deleteImage'),
+                (self.imageRemove, 'removeImage'),
+                (self.volumeRemove, 'removeVolume'),
                 (self.imageDeleteVolumes, 'deleteVolume'),
                 (self.imageMergeSnapshots, 'mergeSnapshots'),
                 (self.imageMove, 'moveImage'),
@@ -1207,7 +1221,8 @@ class BindingXMLRPC(object):
                  'storageServer_ConnectionRefs_release'),
                 (self.storageServerConnectionRefsStatuses,
                  'storageServer_ConnectionRefs_statuses'),
-                (self.volumeCreateContainer, 'createVolumeContainer'))
+                (self.volumeCreateContainer, 'createVolumeContainer'),
+                (self.domainGarbageCollect, 'garbageCollectStorageDomain'))
 
 
 def wrapApiMethod(f):

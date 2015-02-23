@@ -3694,3 +3694,31 @@ class HSM(object):
         return sdm.create_volume_container(dom_manifest, imgUUID, size,
                                            volFormat, diskType, volUUID, desc,
                                            srcImgUUID, srcVolUUID)
+
+    @public
+    @sdm_verb
+    def removeVolume(self, sdUUID, imgUUID, volUUID):
+        dom_manifest = sdCache.produce(sdUUID=sdUUID).get_manifest()
+        misc.validateUUID(imgUUID, 'imgUUID')
+        vars.task.getSharedLock(STORAGE, sdUUID)
+        return sdm.remove_volume(dom_manifest, imgUUID, volUUID)
+
+    @public
+    @sdm_verb
+    def removeImage(self, sdUUID, imgUUID):
+        dom_manifest = sdCache.produce(sdUUID=sdUUID).get_manifest()
+        misc.validateUUID(imgUUID, 'imgUUID')
+
+        # Taking an exclusive lock on both imgUUID and sdUUID since
+        # an image can exist on two SDs concurrently (e.g. during LSM flow);
+        # hence, we need a unique identifier.
+        vars.task.getExclusiveLock(STORAGE, "%s_%s" % (imgUUID, sdUUID))
+        vars.task.getSharedLock(STORAGE, sdUUID)
+        return sdm.remove_image(dom_manifest, imgUUID)
+
+    @public
+    @sdm_verb
+    def garbageCollectStorageDomain(self, sdUUID):
+        dom_manifest = sdCache.produce(sdUUID=sdUUID).get_manifest()
+        vars.task.getSharedLock(STORAGE, sdUUID)
+        return sdm.garbage_collect_storage_domain(dom_manifest)

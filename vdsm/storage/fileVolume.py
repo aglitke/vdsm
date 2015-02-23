@@ -20,9 +20,7 @@
 
 import errno
 import os
-import random
 import sanlock
-import string
 
 import storage_exception as se
 from vdsm import qemuimg

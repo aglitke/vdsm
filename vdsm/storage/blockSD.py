@@ -161,7 +161,7 @@ def _get_garbage_vol_meta_id(sdUUID, volUUID, tags):
     for tag in tags:
         if tag.startswith(blockVolume.TAG_PREFIX_MD):
             meta_offset = tag[len(blockVolume.TAG_PREFIX_MD):]
-            return sdUUID, meta_offset
+            return sdUUID, int(meta_offset)
     log.error("missing offset tag on volume %s/%s", sdUUID, volUUID)
     raise se.VolumeMetadataReadError("missing offset tag on volume %s/%s" %
                                      (sdUUID, volUUID))
@@ -189,7 +189,7 @@ def _getVolsTree(sdUUID):
     return vols
 
 
-def getAllVolumes(sdUUID):
+def getAllVolumes(sdUUID, vols=None):
     """
     Return dict {volUUID: ((imgUUIDs,), parentUUID)} of the domain.
 
@@ -198,18 +198,19 @@ def getAllVolumes(sdUUID):
     For other volumes, there is just a single imageUUID.
     Template self image is the 1st term in template volume entry images.
     """
-    vols = _getVolsTree(sdUUID)
+    if not vols:
+        vols = _getVolsTree(sdUUID)
 
-    # Remove volumes awaiting garbage collection from the result
-    for vol_id in vols.iterkeys():
-        if vols[vol_id].garbage_meta_id is not None:
-            del vols[vol_id]
+        # Remove volumes awaiting garbage collection from the result
+        for vol_id, vol_info in vols.items():
+            if vol_info.garbage_meta_id is not None:
+                del vols[vol_id]
 
     res = {}
     for volName in vols.iterkeys():
         res[volName] = {'imgs': [], 'parent': None}
 
-    for volName, vImg, parentVol in vols.itervalues():
+    for volName, vImg, parentVol, gc_meta_id in vols.itervalues():
         res[volName]['parent'] = parentVol
         if vImg not in res[volName]['imgs']:
             res[volName]['imgs'].insert(0, vImg)
@@ -874,6 +875,52 @@ class BlockStorageDomainManifest(sd.StorageDomainManifest):
     def commit_volume_artifacts(self, img_path, img_id, vol_id):
         lvm.changeLVTags(self.sdUUID, vol_id, addTags=[],
                          delTags=[blockVolume.TAG_VOL_GARBAGE])
+
+    @require_sdm
+    def get_garbage_volumes(self, match_img=None, match_vol=None):
+        ret = []
+        lvm.invalidateVG(self.sdUUID)
+        vols_tree = _getVolsTree(self.sdUUID)
+        all_volumes = getAllVolumes(self.sdUUID, vols_tree)
+        for vol_id, (images, parent) in all_volumes.items():
+            if vols_tree[vol_id].garbage_meta_id is None:
+                continue
+            if match_vol and vol_id != match_vol:
+                continue
+            if match_img and images[0] != match_img:
+                continue
+            if len(images) > 1:
+                self.log.warning("Refusing to garbage collect template volume "
+                                 "%s, sd:%s, img:%s", vol_id, self.sdUUID,
+                                 images[0])
+                continue
+            garbage_meta_id = vols_tree[vol_id].garbage_meta_id
+            ret.append(sd.GCVol(vol_id, images[0], garbage_meta_id, parent))
+        return ret
+
+    def remove_volume_artifacts(self, img_id, vol_id, meta_id):
+        try:
+            blockVolume.BlockVolumeMetadata.clearMetadataSlot(meta_id)
+        except se.VolumeMetadataReadError:
+            self.log.debug("Failed to read metadata while garbage collecting "
+                           "volume %s.  Assuming we already removed metadata",
+                           vol_id)
+        except se.VolumeMetadataWriteError:
+            self.log.debug("Failed to clear metadata while garbage "
+                           "collecting volume %s.  Will retry later", vol_id)
+            return
+        lvm.removeLVs(self.sdUUID, vol_id)
+
+    def discard_volume(self, img_id, vol_id, parent_id):
+        lvm.addtag(self.sdUUID, vol_id, blockVolume.TAG_VOL_GARBAGE)
+        gc_vols = self.get_garbage_volumes(img_id, vol_id)
+        if len(gc_vols) != 1:
+            self.log.warning("Unable to lookup garbage collection info for "
+                             "volume %s", vol_id)
+            return
+        vol = gc_vols[0]
+        self.garbage_collect_volume(vol.image, vol.name, vol.meta_id,
+                                    vol.parent)
 
 
 class BlockStorageDomain(sd.StorageDomain):

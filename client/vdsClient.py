@@ -1179,6 +1179,23 @@ class service:
             return status['status']['code'], status['status']['message']
         return 0, status['uuid']
 
+    def removeVolumes(self, args):
+        sdUUID = args[0]
+        imgUUID = args[1]
+        volumeList = args[2].split(',')
+        status = self.s.removeVolumes(sdUUID, imgUUID, volumeList)
+        if status['status']['code']:
+            return status['status']['code'], status['status']['message']
+        return 0, ''
+
+    def removeImage(self, args):
+        sdUUID = args[0]
+        imgUUID = args[1]
+        status = self.s.removeImage(sdUUID, imgUUID)
+        if status['status']['code']:
+            return status['status']['code'], status['status']['message']
+        return 0, ''
+
     def deleteVolumeByDescr(self, args):
         sdUUID = args[1]
         spUUID = args[2]
@@ -2567,6 +2584,15 @@ if __name__ == '__main__':
                           ' <postZero> [<force>]',
                           'Deletes an volume if its a leaf. Else returns error'
                           )),
+        'removeVolumes': (serv.removeVolumes, (
+            '<sdUUID> <imgUUID> <volUUID>,...,<volUUID>',
+            'Remove a one or more volumes from an image.  The volume list '
+            'must be a lineage and include the current leaf volume.'
+        )),
+        'removeImage': (serv.removeImage,
+                        ('<sdUUID> <imgUUID>',
+                         'Remove an image and all of its volumes.'
+                         )),
         'deleteVolumeByDescr': (serv.deleteVolumeByDescr,
                                 ('<part of description> <sdUUID> <spUUID> '
                                  '<imgUUID>',

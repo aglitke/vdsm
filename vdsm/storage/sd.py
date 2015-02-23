@@ -37,6 +37,7 @@ import clusterlock
 import outOfProcess as oop
 from persistentDict import unicodeEncoder, unicodeDecoder
 import volume
+from sdmprotect import require_sdm
 
 from vdsm.config import config
 
@@ -137,6 +138,8 @@ VMS_DIR = 'vms'
 TASKS_DIR = 'tasks'
 
 ImgsPar = namedtuple("ImgsPar", "imgs,parent")
+GCVol = namedtuple("GCVol", "name, image, meta_id, parent")
+GCImage = namedtuple("GCImage", "image, vols")
 ISO_IMAGE_UUID = '11111111-1111-1111-1111-111111111111'
 BLANK_UUID = '00000000-0000-0000-0000-000000000000'
 REMOVED_IMAGE_PREFIX = "_remove_me_"
@@ -496,6 +499,24 @@ class StorageDomainManifest(object):
         (on NFS mostly) due to lazy file removal
         """
         pass
+
+    @require_sdm
+    def get_garbage_images(self, match_img=None):
+        return []
+
+    @require_sdm
+    def garbage_collect_volume(self, img_id, vol_id, meta_id, parent_id):
+        self.log.info("Garbage collecting volume %s (image: %s, parent: %s)",
+                      vol_id, img_id, parent_id)
+        if parent_id and parent_id != volume.BLANK_UUID:
+            try:
+                parent_vol = self.produceVolume(img_id, parent_id)
+                parent_vol.recheckIfLeaf()
+            except Exception:
+                self.log.exception("cannot finalize parent volume %s",
+                                   parent_id)
+                return
+        self.remove_volume_artifacts(img_id, vol_id, meta_id)
 
 
 class StorageDomain(object):

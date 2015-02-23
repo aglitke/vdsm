@@ -1883,3 +1883,12 @@ class SDM(APIBase):
         return self._irs.createVolumeContainer(
             sdUUID, imgUUID, size, volFormat, diskType, volUUID, desc,
             srcImgUUID, srcVolUUID)
+
+    def removeImage(self, sdUUID, imgUUID):
+        return self._irs.removeImage(sdUUID, imgUUID)
+
+    def removeVolume(self, sdUUID, imgUUID, volUUID):
+        return self._irs.removeVolume(sdUUID, imgUUID, volUUID)
+
+    def garbageCollectStorageDomain(self, sdUUID):
+        return self._irs.garbageCollectStorageDomain(sdUUID)

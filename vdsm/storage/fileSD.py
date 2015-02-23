@@ -403,6 +403,87 @@ class FileStorageDomainManifest(sd.StorageDomainManifest):
             new_path = image_manifest.getImageDir(self.sdUUID, img_id)
             self.oop.os.rename(img_path, new_path)
 
+    @require_sdm
+    def get_garbage_volumes(self, match_img=None, match_vol=None):
+        ret = []
+        img_glob = match_img or '*'
+        vol_glob = match_vol or '*'
+        dir_glob = os.path.join(self.getRepoPath(), self.sdUUID,
+                                sd.DOMAIN_IMAGES, img_glob)
+        meta_glob = (vol_glob + fileVolume.META_FILEEXT +
+                     fileVolume.GC_VOL_MD_EXT)
+        garbage_glob = os.path.join(dir_glob, meta_glob)
+        garbage_meta_paths = self.oop.glob.glob(garbage_glob)
+        for meta_path in garbage_meta_paths:
+            head, tail = os.path.split(meta_path)
+            vol_id, rest = tail.split('.', 1)
+            img_id = os.path.basename(head)
+            try:
+                md = fileVolume.FileVolumeMetadata.read_metadata(self.oop,
+                                                                 meta_path)
+                parent = md.get(volume.PUUID)
+            except se.VolumeMetadataReadError:
+                self.log.debug("Unable to read metadata for volume %s. "
+                               "Assuming volume has no parent", meta_path)
+                parent = None
+            ret.append(sd.GCVol(vol_id, img_id, None, parent))
+        return ret
+
+    @require_sdm
+    def get_garbage_images(self, match_img=None):
+        garbage = []
+        images = self.getAllImages()
+        volmap = self.getImageToVolumesMap()
+
+        if match_img is not None:
+            images = {match_img} & images
+            if match_img in volmap:
+                volmap = {match_img: volmap[match_img]}
+            else:
+                volmap = {}
+
+        # Find all empty image directories
+        empty_images = set(images) - set(volmap.keys())
+        if empty_images:
+            self.log.debug("Found empty images in domain %s: %s", self.sdUUID,
+                           empty_images)
+            garbage.extend([sd.GCImage(img, []) for img in empty_images])
+
+        # Find images which contain only a cloned template volume
+        for img_id, vols in volmap.iteritems():
+            if len(vols) != 1:
+                continue
+            vol = self.produceVolume(img_id, vols[0])
+            source_img = vol.getImage()
+            if vol.isShared() and source_img != img_id:
+                self.log.debug("Found unused cloned template "
+                               "(img: %s, vol: %s) shared from image: %s",
+                               img_id, vols[0], source_img)
+                garbage.append(sd.GCImage(img_id, vols))
+        return garbage
+
+    def remove_volume_artifacts(self, img_id, vol_id, unused):
+        img_path = os.path.join(self.getRepoPath(), self.sdUUID,
+                                sd.DOMAIN_IMAGES, img_id)
+        vol_path = os.path.join(img_path, vol_id)
+        lease_path = vol_path + fileVolume.LEASE_FILEEXT
+        gc_md_path = (fileVolume.FileVolumeMetadata._metaVolumePath(vol_path) +
+                      fileVolume.GC_VOL_MD_EXT)
+        to_remove = [vol_path, lease_path, gc_md_path]
+        for f in to_remove:
+            if self.oop.os.path.lexists(f):
+                self.log.debug("Removing: %s", f)
+                self.oop.os.unlink(f)
+
+    def discard_volume(self, img_id, vol_id, parent_id):
+        img_path = os.path.join(self.getRepoPath(), self.sdUUID,
+                                sd.DOMAIN_IMAGES, img_id)
+        vol_path = os.path.join(img_path, vol_id)
+        meta_file = fileVolume.FileVolumeMetadata._metaVolumePath(vol_path)
+        gc_meta_file = meta_file + fileVolume.GC_VOL_MD_EXT
+        self.oop.os.rename(meta_file, gc_meta_file)
+        self.garbage_collect_volume(img_id, vol_id, None, parent_id)
+
 
 class FileStorageDomain(sd.StorageDomain):
     manifestClass = FileStorageDomainManifest

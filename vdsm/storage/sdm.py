@@ -92,10 +92,12 @@ def _make_template_shareable(vol_md):
     imageResourcesNamespace = sd.getNamespace(vol_md.sdUUID,
                                               IMAGE_NAMESPACE)
     if not vol_md.isShared():
+        log.debug("Converting leaf volume %s to template", vol_md.volUUID)
         if vol_md.getParentId() == volume.BLANK_UUID:
             with rmanager.acquireResource(imageResourcesNamespace,
                                           vol_md.imgUUID,
                                           rm.LockType.exclusive):
+                # XXX: How will we undo this operation safely?
                 vol_md.setShared()
         else:
             raise se.VolumeNonShareable(vol_md.volUUID)
@@ -166,3 +168,126 @@ def _initialize_volume_contents(img_id, vol_id, vol_path, vol_format, size,
                  "%s/%s", img_id, vol_id, parent_vol_md.imgUUID,
                  parent_vol_md.volUUID)
         _clone_volume(parent_vol_md, vol_path, vol_format)
+
+
+def remove_volume(dom_manifest, img_id, vol_id):
+    hostId = get_domain_host_id(dom_manifest.sdUUID)
+    dom_manifest.acquireDomainLock(hostId)
+    try:
+        res_ns = sd.getNamespace(dom_manifest.sdUUID, IMAGE_NAMESPACE)
+        with rmanager.acquireResource(res_ns, img_id, rm.LockType.exclusive):
+            vol = dom_manifest.produceVolume(img_id, vol_id)
+            vol.validate()
+            vol.validateDelete()
+            parent_id = vol.getParentId()
+            dom_manifest.discard_volume(img_id, vol_id, parent_id)
+
+            # Removing the last volume may have caused this image to become
+            # garbage.  As an optimization, clean up the image now.  In case
+            # this code does not run, the image will be cleaned by the periodic
+            # garbage collector.
+            garbage_imgs = dom_manifest.get_garbage_images(img_id)
+            if len(garbage_imgs) == 1:
+                _garbage_collect_image(dom_manifest, garbage_imgs[0])
+    finally:
+        dom_manifest.releaseDomainLock()
+
+
+def remove_image(dom_manifest, img_id):
+    hostId = get_domain_host_id(dom_manifest.sdUUID)
+    dom_manifest.acquireDomainLock(hostId)
+    try:
+        allvols = dom_manifest.getAllVolumes()
+        volsbyimg = sd.getVolsOfImage(allvols, img_id)
+        if not volsbyimg:
+            log.warning("Empty or not found image %s in SD %s.",
+                        img_id, dom_manifest.sdUUID)
+            raise se.ImageDoesNotExistInSD(img_id, dom_manifest.sdUUID)
+
+        # Images should not be deleted if they are templates being used by
+        # other images.
+        for k, v in volsbyimg.iteritems():
+            if len(v.imgs) > 1 and v.imgs[0] == img_id:
+                raise se.CannotDeleteSharedVolume("Cannot delete shared "
+                                                  "image %s. volsbyimg: %s" %
+                                                  (img_id, volsbyimg))
+
+        res_ns = sd.getNamespace(dom_manifest.sdUUID, IMAGE_NAMESPACE)
+        with rmanager.acquireResource(res_ns, img_id, rm.LockType.exclusive):
+            dom_manifest.deleteImage(dom_manifest.sdUUID, img_id, volsbyimg)
+    finally:
+        dom_manifest.releaseDomainLock()
+
+
+def garbage_collect_storage_domain(dom_manifest):
+    # This garbage collector runs periodically on the storage domain to
+    # clean up interrupted volume removal operations and remove images
+    # which are no longer needed.
+
+    if dom_manifest.isISO():
+        log.debug("Ignoring request to garbage collect ISO domain %s",
+                  dom_manifest.sdUUID)
+        return
+
+    hostId = get_domain_host_id(dom_manifest.sdUUID)
+    dom_manifest.acquireDomainLock(hostId)
+    try:
+        # Remove any remnant image directories
+        dom_manifest.imageGarbageCollector()
+        garbage_collect_volumes(dom_manifest)
+        garbage_collect_images(dom_manifest)
+    finally:
+        dom_manifest.releaseDomainLock()
+
+
+def _garbage_collect_image(dom_manifest, gc_img):
+    # If we raced with create_volume_container this image may not
+    # actually be garbage.  If getImageVolumes returns an empty
+    # list, then the image either contains an orphaned template or
+    # it is completely empty.  If the list contains any volumes
+    # then the image should not be garbage collected.
+    sd_id = dom_manifest.sdUUID
+    cur_vols = dom_manifest.getVolumeClass().getImageVolumes(
+        dom_manifest.getRepoPath(), sd_id, gc_img.image)
+    if len(cur_vols) > 0:
+        log.debug("Aborting garbage collection of image %s which "
+                  "now contains volumes %s", gc_img.image, cur_vols)
+        return
+    log.info("Garbage collecting image %s", gc_img)
+    dom_manifest.deleteImage(sd_id, gc_img.image, gc_img.vols)
+
+
+def garbage_collect_images(dom_manifest):
+    res_ns = sd.getNamespace(dom_manifest.sdUUID, IMAGE_NAMESPACE)
+    for gc_img in dom_manifest.get_garbage_images():
+        with rmanager.acquireResource(res_ns, gc_img.image,
+                                      rm.LockType.exclusive):
+            _garbage_collect_image(dom_manifest, gc_img)
+
+
+def garbage_collect_volumes(dom_manifest, img_filter=None, vol_filter=None):
+    # This garbage collector cleans up one or more volumes on a storage
+    # domain which have been partially removed.  In the typical case it is
+    # invoked with a specific volume UUID immediately after that volume has
+    # been removed.  Care should be taken to ensure that this common case
+    # remains fast and efficient.  This can also be called by the periodic
+    # garbage collector to clean up interrupted operations.
+    # TODO: Acquire resource locks (imagine this being called concurrently)
+    res_ns = sd.getNamespace(dom_manifest.sdUUID, IMAGE_NAMESPACE)
+    for gcvol in dom_manifest.get_garbage_volumes(img_filter, vol_filter):
+        with rmanager.acquireResource(res_ns, gcvol.image,
+                                      rm.LockType.exclusive):
+            # get_garbage_volumes runs without locking so it's possible that
+            # the volume we are about to garbage collect is no longer garbage.
+            # If we can produce the volume then do not garbage collect it.
+            try:
+                dom_manifest.produceVolume(gcvol.image, gcvol.name)
+            except se.VolumeDoesNotExist:
+                pass
+            else:
+                log.debug("Skipping volume: %s image: %s which is not garbage",
+                          gcvol.name, gcvol.image)
+                continue
+
+            dom_manifest.garbage_collect_volume(gcvol.image, gcvol.name,
+                                                gcvol.meta_id, gcvol.parent)

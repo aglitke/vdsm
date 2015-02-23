@@ -157,7 +157,11 @@ class BlockVolumeMetadata(volume.VolumeMetadata):
 
     def validate(self):
         try:
-            lvm.getLV(self.sdUUID, self.volUUID)
+            lv = lvm.getLV(self.sdUUID, self.volUUID)
+            if TAG_VOL_GARBAGE in lv.tags:
+                self.log.debug("Volume %s is garbage (sd:%s)",
+                               self.volUUID, self.sdUUID)
+                raise se.VolumeDoesNotExist(self.volUUID)
         except se.LogicalVolumeDoesNotExistError:
             raise se.VolumeDoesNotExist(self.volUUID)
         volume.VolumeMetadata.validate(self)
