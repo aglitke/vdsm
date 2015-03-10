@@ -417,13 +417,25 @@ class StorageDomainManifest(object):
             self.getMetaParam(DMDK_LEASE_RETRIES),
             self.getMetaParam(DMDK_IO_OP_TIMEOUT_SEC)
         )
-        self._domainLock.acquire(hostID)
+        self._domainLock.acquireDomain(hostID)
 
     def releaseDomainLock(self):
-        self._domainLock.release()
+        self._domainLock.releaseDomain()
 
     def inquireDomainLock(self):
-        return self._domainLock.inquire()
+        return self._domainLock.inquireDomain()
+
+    def acquireVolumeLease(self, imgUUID, volUUID, shared=False):
+        lockDisk = self.getVolumeLease(imgUUID, volUUID)
+        self._domainLock.acquireResource(volUUID, [lockDisk], shared)
+
+    def releaseVolumeLease(self, imgUUID, volUUID):
+        lockDisk = self.getVolumeLease(imgUUID, volUUID)
+        self._domainLock.releaseResource(volUUID, [lockDisk])
+
+    def inquireVolumeLease(self, imgUUID, volUUID):
+        lockDisk = self.getVolumeLease(imgUUID, volUUID)
+        return self._domainLock.inquireResource(volUUID, [lockDisk])
 
     def _makeDomainLock(self, domVersion=None):
         if not domVersion:
@@ -655,7 +667,7 @@ class StorageDomain(object):
     def hasVolumeLeases(self):
         return self._manifest.hasVolumeLeases()
 
-    def getVolumeLease(self, volUUID):
+    def getVolumeLease(self, imgUUID, volUUID):
         """
         Return the volume lease (leasePath, leaseOffset)
         """

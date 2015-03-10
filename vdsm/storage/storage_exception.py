@@ -1623,6 +1623,11 @@ class InquireNotSupportedError(StorageException):
     message = "Cluster lock inquire isnt supported"
 
 
+class VolumeLeasesNotSupportedError(Exception):
+    code = 703
+    message = "This storage domain does not support volume leases"
+
+
 #################################################
 #  Meta data related Exceptions
 #################################################

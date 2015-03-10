@@ -199,7 +199,7 @@ def v3DomainConverter(repoPath, hostId, domain, isMsd):
         if isMsd:
             log.debug("Acquiring the cluster lock for domain %s with "
                       "host id: %s", domain.sdUUID, hostId)
-            newClusterLock.acquire(hostId)
+            newClusterLock.acquireDomain(hostId)
 
         allVolumes = domain.getAllVolumes()
         allImages = {}  # {images: parent_image}
@@ -311,7 +311,7 @@ def v3DomainConverter(repoPath, hostId, domain, isMsd):
             try:
                 log.error("Releasing the cluster lock for domain %s with "
                           "host id: %s", domain.sdUUID, hostId)
-                newClusterLock.release()
+                newClusterLock.releaseDomain()
             except:
                 log.error("Unable to release the cluster lock for domain "
                           "%s with host id: %s", domain.sdUUID, hostId,
@@ -334,7 +334,7 @@ def v3DomainConverter(repoPath, hostId, domain, isMsd):
     # release errors.
     if isMsd:
         try:
-            domain._clusterLock.release()
+            domain._clusterLock.releaseDomain()
         except:
             log.error("Unable to release the old cluster lock for domain "
                       "%s ", domain.sdUUID, exc_info=True)
