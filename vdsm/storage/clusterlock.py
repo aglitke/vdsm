@@ -73,6 +73,10 @@ class InquireNotSupportedError(Exception):
     """Raised when the clusterlock class is not supporting inquire"""
 
 
+class VolumeLeasesNotSupportedError(Exception):
+    """Raised when the clusterlock class does not support volume leases"""
+
+
 class SafeLease(object):
     log = logging.getLogger("Storage.SafeLease")
 
@@ -125,7 +129,7 @@ class SafeLease(object):
     def getHostStatus(self, hostId):
         return HOST_STATUS_UNAVAILABLE
 
-    def acquire(self, hostID):
+    def acquireDomain(self, hostID):
         leaseTimeMs = self._leaseTimeSec * 1000
         ioOpTimeoutMs = self._ioOpTimeoutSec * 1000
         with self._lock:
@@ -149,13 +153,19 @@ class SafeLease(object):
                 raise se.AcquireLockFailure(self._sdUUID, rc, out, err)
             self.log.debug("Clustered lock acquired successfully")
 
-    def inquire(self):
+    def acquireResource(self, resource, lockDisk, shared=False):
+        raise VolumeLeasesNotSupportedError()
+
+    def inquireDomain(self):
+        raise InquireNotSupportedError()
+
+    def inquireResource(self, resource, lockDisk):
         raise InquireNotSupportedError()
 
     def getLockUtilFullPath(self):
         return os.path.join(self.lockUtilPath, self.lockCmd)
 
-    def release(self):
+    def releaseDomain(self):
         with self._lock:
             freeLockUtil = os.path.join(self.lockUtilPath, self.freeLockCmd)
             releaseLockCommand = [freeLockUtil, self._sdUUID]
@@ -169,6 +179,8 @@ class SafeLease(object):
 
             self.log.debug("Cluster lock released successfully")
 
+    def releaseResource(self, resource, lockDisk):
+        raise VolumeLeasesNotSupportedError()
 
 initSANLockLog = logging.getLogger("Storage.initSANLock")
 
@@ -297,10 +309,48 @@ class SANLock(object):
     # The hostId parameter is maintained here only for compatibility with
     # ClusterLock. We could consider to remove it in the future but keeping it
     # for logging purpose is desirable.
-    def acquire(self, hostId):
+    def acquireDomain(self, hostId):
+        self.log.info("Acquiring domain lock for domain %s (id: %s)",
+                      self._sdUUID, hostId)
+        self._acquire(SDM_LEASE_NAME, self.getLockDisk())
+        self.log.debug("Domain lock for domain %s successfully acquired "
+                       "(id: %s)", self._sdUUID, hostId)
+
+    def acquireResource(self, resource, lockDisk, shared=False):
+        self.log.info("Acquiring resource lock for %s", resource)
+        self._acquire(resource, lockDisk, shared)
+        self.log.debug("Resource lock for %s successfully acquired", resource)
+
+    def inquireDomain(self):
+        resource, owners = self._inquire(SDM_LEASE_NAME, self.getLockDisk())
+        if len(owners) == 1:
+            return resource.get("version"), owners[0].get("host_id")
+        elif len(owners) > 1:
+            self.log.error("Domain lock is reported to have more than "
+                           "one owner: %s", owners)
+            raise RuntimeError("Domain lock multiple owners error")
+
+        return None, None
+
+    def inquireResource(self, resource, lockDisk):
+        resource, owners = self._inquire(resource, lockDisk)
+        return (resource.get("version"),
+                [owner.get("host_id") for owner in owners])
+
+    def releaseDomain(self):
+        self.log.info("Releasing Domain lock for domain %s", self._sdUUID)
+        self._release(SDM_LEASE_NAME, self.getLockDisk())
+        self.log.debug("Domain lock for domain %s successfully released",
+                       self._sdUUID)
+
+    def releaseResource(self, resource, lockDisk):
+        self.log.info("Releasing resource lock for %s", resource)
+        self._release(resource, lockDisk)
+        self.log.debug("Resource lock for %s successfully released", resource)
+
+    def _acquire(self, resource, lockDisk, shared=False):
         with nested(self._lock, SANLock._sanlock_lock):
-            self.log.info("Acquiring cluster lock for domain %s (id: %s)",
-                          self._sdUUID, hostId)
+            self.log.info("Acquiring resource %s, shared=%s", resource, shared)
 
             while True:
                 if SANLock._sanlock_fd is None:
@@ -312,49 +362,37 @@ class SANLock(object):
                             "Cannot register to sanlock", str(e))
 
                 try:
-                    sanlock.acquire(self._sdUUID, SDM_LEASE_NAME,
-                                    self.getLockDisk(),
-                                    slkfd=SANLock._sanlock_fd)
+                    sanlock.acquire(self._sdUUID, resource, lockDisk,
+                                    slkfd=SANLock._sanlock_fd, shared=shared)
                 except sanlock.SanlockException as e:
                     if e.errno != os.errno.EPIPE:
                         raise se.AcquireLockFailure(
                             self._sdUUID, e.errno,
-                            "Cannot acquire cluster lock", str(e))
+                            "Cannot acquire sanlock resource", str(e))
                     SANLock._sanlock_fd = None
                     continue
 
                 break
 
-            self.log.debug("Cluster lock for domain %s successfully acquired "
-                           "(id: %s)", self._sdUUID, hostId)
+            self.log.debug("Resource %s successfully acquired", resource)
 
-    def inquire(self):
-        resource = sanlock.read_resource(self._leasesPath, SDM_LEASE_OFFSET)
-        owners = sanlock.read_resource_owners(self._sdUUID, SDM_LEASE_NAME,
-                                              self.getLockDisk())
+    def _inquire(self, resource, lockDisk):
+        res = sanlock.read_resource(*lockDisk[0])
+        owners = sanlock.read_resource_owners(self._sdUUID, resource, lockDisk)
+        return res, owners
 
-        if len(owners) == 1:
-            return resource.get("version"), owners[0].get("host_id")
-        elif len(owners) > 1:
-            self.log.error("Cluster lock is reported to have more than "
-                           "one owner: %s", owners)
-            raise RuntimeError("Cluster lock multiple owners error")
-
-        return None, None
-
-    def release(self):
+    def _release(self, resource, lockDisk):
         with self._lock:
-            self.log.info("Releasing cluster lock for domain %s", self._sdUUID)
+            self.log.info("Releasing resource %s", resource)
 
             try:
-                sanlock.release(self._sdUUID, SDM_LEASE_NAME,
-                                self.getLockDisk(), slkfd=SANLock._sanlock_fd)
+                sanlock.release(self._sdUUID, resource, lockDisk,
+                                slkfd=SANLock._sanlock_fd)
             except sanlock.SanlockException as e:
-                raise se.ReleaseLockFailure(self._sdUUID, e)
+                raise se.ReleaseLockFailure(resource, e)
 
             self._sanlockfd = None
-            self.log.debug("Cluster lock for domain %s successfully released",
-                           self._sdUUID)
+            self.log.debug("Resource %s successfully released", resource)
 
 
 class LocalLock(object):
@@ -434,7 +472,7 @@ class LocalLock(object):
     def getHostStatus(self, hostId):
         return HOST_STATUS_UNAVAILABLE
 
-    def acquire(self, hostId):
+    def acquireDomain(self, hostId):
         with self._globalLockMapSync:
             self.log.info("Acquiring local lock for domain %s (id: %s)",
                           self._sdUUID, hostId)
@@ -474,12 +512,18 @@ class LocalLock(object):
         self.log.debug("Local lock for domain %s successfully acquired "
                        "(id: %s)", self._sdUUID, hostId)
 
-    def inquire(self):
+    def acquireResource(self, resource, lockDisk, shared=False):
+        raise VolumeLeasesNotSupportedError()
+
+    def inquireDomain(self):
         with self._globalLockMapSync:
             hostId, lockFile = self._getLease()
             return self.LVER, (hostId if lockFile else None)
 
-    def release(self):
+    def inquireResource(self, resource, lockDisk):
+        raise InquireNotSupportedError()
+
+    def releaseDomain(self):
         with self._globalLockMapSync:
             self.log.info("Releasing local lock for domain %s", self._sdUUID)
 
@@ -495,3 +539,6 @@ class LocalLock(object):
 
             self.log.debug("Local lock for domain %s successfully released",
                            self._sdUUID)
+
+    def releaseResource(self, resource, lockDisk):
+        raise VolumeLeasesNotSupportedError()
