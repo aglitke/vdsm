@@ -228,6 +228,20 @@ class FileStorageDomainManifest(sd.StorageDomainManifest):
             self.log.error("removed image dir: %s can't be removed", toDelDir)
             raise se.ImageDeleteError("%s %s" % (imgUUID, str(e)))
 
+    def getImageToVolumesMap(self):
+        volMetaPattern = os.path.join(self.mountpoint, self.sdUUID,
+                                      sd.DOMAIN_IMAGES, "*", "*.meta")
+        volMetaPaths = self.oop.glob.glob(volMetaPattern)
+
+        # First create mapping from images to volumes
+        images = collections.defaultdict(list)
+        for metaPath in volMetaPaths:
+            head, tail = os.path.split(metaPath)
+            volUUID, volExt = os.path.splitext(tail)
+            imgUUID = os.path.basename(head)
+            images[imgUUID].append(volUUID)
+        return images
+
     def getAllVolumes(self):
         """
         Return dict {volUUID: ((imgUUIDs,), parentUUID)} of the domain.
@@ -245,17 +259,8 @@ class FileStorageDomainManifest(sd.StorageDomainManifest):
         Template volumes have no parent, and thus we report BLANK_UUID as their
         parentUUID.
         """
-        volMetaPattern = os.path.join(self.mountpoint, self.sdUUID,
-                                      sd.DOMAIN_IMAGES, "*", "*.meta")
-        volMetaPaths = self.oop.glob.glob(volMetaPattern)
-
-        # First create mapping from images to volumes
-        images = collections.defaultdict(list)
-        for metaPath in volMetaPaths:
-            head, tail = os.path.split(metaPath)
-            volUUID, volExt = os.path.splitext(tail)
-            imgUUID = os.path.basename(head)
-            images[imgUUID].append(volUUID)
+        # First get the mapping from images to volumes
+        images = self.getImageToVolumesMap()
 
         # Using images to volumes mapping, we can create volumes to images
         # mapping, detecting template volumes and template images, based on
