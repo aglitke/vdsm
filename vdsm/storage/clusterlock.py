@@ -215,6 +215,7 @@ class SANLock(object):
 
     def __init__(self, sdUUID, idsPath, leasesPath, *args):
         self._lock = threading.Lock()
+        self._clusterLockUsers = 0
         self._sdUUID = sdUUID
         self._idsPath = idsPath
         self._leasesPath = leasesPath
@@ -310,16 +311,22 @@ class SANLock(object):
     # ClusterLock. We could consider to remove it in the future but keeping it
     # for logging purpose is desirable.
     def acquireDomain(self, hostId):
-        self.log.info("Acquiring domain lock for domain %s (id: %s)",
-                      self._sdUUID, hostId)
-        self._acquire(SDM_LEASE_NAME, self.getLockDisk())
-        self.log.debug("Domain lock for domain %s successfully acquired "
-                       "(id: %s)", self._sdUUID, hostId)
+        with nested(self._lock, SANLock._sanlock_lock):
+            self.log.info("Acquiring cluster lock for domain %s (id: %s)",
+                          self._sdUUID, hostId)
+            if self._clusterLockUsers == 0:
+                self._acquire(SDM_LEASE_NAME, self.getLockDisk())
+            self._clusterLockUsers = self._clusterLockUsers + 1
+            self.log.debug("Cluster lock for domain %s successfully acquired "
+                           "(id: %s, users: %i)", self._sdUUID, hostId,
+                           self._clusterLockUsers)
 
     def acquireResource(self, resource, lockDisk, shared=False):
-        self.log.info("Acquiring resource lock for %s", resource)
-        self._acquire(resource, lockDisk, shared)
-        self.log.debug("Resource lock for %s successfully acquired", resource)
+        with nested(self._lock, SANLock._sanlock_lock):
+            self.log.info("Acquiring resource lock for %s", resource)
+            self._acquire(resource, lockDisk, shared)
+            self.log.debug("Resource lock for %s successfully acquired",
+                           resource)
 
     def inquireDomain(self):
         resource, owners = self._inquire(SDM_LEASE_NAME, self.getLockDisk())
@@ -338,43 +345,47 @@ class SANLock(object):
                 [owner.get("host_id") for owner in owners])
 
     def releaseDomain(self):
-        self.log.info("Releasing Domain lock for domain %s", self._sdUUID)
-        self._release(SDM_LEASE_NAME, self.getLockDisk())
-        self.log.debug("Domain lock for domain %s successfully released",
-                       self._sdUUID)
+        with self._lock:
+            self.log.info("Releasing Domain lock for domain %s", self._sdUUID)
+            if self._clusterLockUsers == 1:
+                self._release(SDM_LEASE_NAME, self.getLockDisk())
+            self._clusterLockUsers -= 1
+            self.log.debug("Cluster lock for domain %s successfully released "
+                           "(users: %i)", self._sdUUID, self._clusterLockUsers)
 
     def releaseResource(self, resource, lockDisk):
-        self.log.info("Releasing resource lock for %s", resource)
-        self._release(resource, lockDisk)
-        self.log.debug("Resource lock for %s successfully released", resource)
+        with self._lock:
+            self.log.info("Releasing resource lock for %s", resource)
+            self._release(resource, lockDisk)
+            self.log.debug("Resource lock for %s successfully released",
+                           resource)
 
     def _acquire(self, resource, lockDisk, shared=False):
-        with nested(self._lock, SANLock._sanlock_lock):
-            self.log.info("Acquiring resource %s, shared=%s", resource, shared)
+        self.log.info("Acquiring resource %s, shared=%s", resource, shared)
 
-            while True:
-                if SANLock._sanlock_fd is None:
-                    try:
-                        SANLock._sanlock_fd = sanlock.register()
-                    except sanlock.SanlockException as e:
-                        raise se.AcquireLockFailure(
-                            self._sdUUID, e.errno,
-                            "Cannot register to sanlock", str(e))
-
+        while True:
+            if SANLock._sanlock_fd is None:
                 try:
-                    sanlock.acquire(self._sdUUID, resource, lockDisk,
-                                    slkfd=SANLock._sanlock_fd, shared=shared)
+                    SANLock._sanlock_fd = sanlock.register()
                 except sanlock.SanlockException as e:
-                    if e.errno != os.errno.EPIPE:
-                        raise se.AcquireLockFailure(
-                            self._sdUUID, e.errno,
-                            "Cannot acquire sanlock resource", str(e))
-                    SANLock._sanlock_fd = None
-                    continue
+                    raise se.AcquireLockFailure(
+                        self._sdUUID, e.errno, "Cannot register to sanlock",
+                        str(e))
 
-                break
+            try:
+                sanlock.acquire(self._sdUUID, resource, lockDisk,
+                                slkfd=SANLock._sanlock_fd, shared=shared)
+            except sanlock.SanlockException as e:
+                if e.errno != os.errno.EPIPE:
+                    raise se.AcquireLockFailure(
+                        self._sdUUID, e.errno,
+                        "Cannot acquire sanlock resource", str(e))
+                SANLock._sanlock_fd = None
+                continue
 
-            self.log.debug("Resource %s successfully acquired", resource)
+            break
+
+        self.log.debug("Resource %s successfully acquired", resource)
 
     def _inquire(self, resource, lockDisk):
         res = sanlock.read_resource(*lockDisk[0])
@@ -382,17 +393,16 @@ class SANLock(object):
         return res, owners
 
     def _release(self, resource, lockDisk):
-        with self._lock:
-            self.log.info("Releasing resource %s", resource)
+        self.log.info("Releasing resource %s", resource)
 
-            try:
-                sanlock.release(self._sdUUID, resource, lockDisk,
-                                slkfd=SANLock._sanlock_fd)
-            except sanlock.SanlockException as e:
-                raise se.ReleaseLockFailure(resource, e)
+        try:
+            sanlock.release(self._sdUUID, resource, lockDisk,
+                            slkfd=SANLock._sanlock_fd)
+        except sanlock.SanlockException as e:
+            raise se.ReleaseLockFailure(resource, e)
 
-            self._sanlockfd = None
-            self.log.debug("Resource %s successfully released", resource)
+        self._sanlockfd = None
+        self.log.debug("Resource %s successfully released", resource)
 
 
 class LocalLock(object):
