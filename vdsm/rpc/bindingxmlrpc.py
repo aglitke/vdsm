@@ -914,6 +914,14 @@ class BindingXMLRPC(object):
         return volume.create(size, volFormat, preallocate, diskType, desc,
                              srcImgUUID, srcVolUUID, initialSize=initialSize)
 
+    def volumeCreateContainer(self, sdUUID, imgUUID, size, volFormat, diskType,
+                              volUUID, desc, srcImgUUID=API.Image.BLANK_UUID,
+                              srcVolUUID=API.Volume.BLANK_UUID):
+        sdm = API.SDM()
+        return sdm.createVolumeContainer(volUUID, sdUUID, imgUUID, size,
+                                         volFormat, diskType, desc,
+                                         srcImgUUID, srcVolUUID)
+
     def volumeExtendSize(self, spUUID, sdUUID, imgUUID, volUUID, newSize):
         volume = API.Volume(volUUID, spUUID, sdUUID, imgUUID)
         return volume.extendSize(newSize)
@@ -1198,7 +1206,8 @@ class BindingXMLRPC(object):
                 (self.storageServerConnectionRefsRelease,
                  'storageServer_ConnectionRefs_release'),
                 (self.storageServerConnectionRefsStatuses,
-                 'storageServer_ConnectionRefs_statuses'),)
+                 'storageServer_ConnectionRefs_statuses'),
+                (self.volumeCreateContainer, 'createVolumeContainer'))
 
 
 def wrapApiMethod(f):

@@ -1869,3 +1869,17 @@ class Global(APIBase):
                 logging.warn("options %s is deprecated. Use %s instead" %
                              (k, _translationMap[k]))
                 options[_translationMap[k]] = options.pop(k)
+
+
+class SDM(APIBase):
+    ctorArgs = []
+
+    def __init__(self):
+        APIBase.__init__(self)
+
+    def createVolumeContainer(self, volUUID, sdUUID, imgUUID, size, volFormat,
+                              diskType, desc, srcImgUUID=Image.BLANK_UUID,
+                              srcVolUUID=Volume.BLANK_UUID):
+        return self._irs.createVolumeContainer(
+            sdUUID, imgUUID, size, volFormat, diskType, volUUID, desc,
+            srcImgUUID, srcVolUUID)

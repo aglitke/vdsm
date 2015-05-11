@@ -35,7 +35,7 @@ from operator import itemgetter
 from vdsm.config import config
 from vdsm import constants
 from vdsm import utils
-import vdsm.supervdsm as svdsm
+from vdsm import supervdsm as svdsm
 
 import misc
 import fileUtils
@@ -52,7 +52,9 @@ import storage_exception as se
 from storage_mailbox import MAILBOX_SIZE
 import resourceManager as rm
 import mount
+from image import ImageManifest
 import volume
+from sdmprotect import require_sdm
 
 STORAGE_DOMAIN_TAG = "RHAT_storage_domain"
 STORAGE_UNREADY_DOMAIN_TAG = STORAGE_DOMAIN_TAG + "_UNREADY"
@@ -93,6 +95,8 @@ DMDK_PHYBLKSIZE = "PHYBLKSIZE"
 
 VERS_METADATA_LV = (0,)
 VERS_METADATA_TAG = (2, 3)
+
+SECTORS_TO_MB = (1 << 20) / volume.BLOCK_SIZE
 
 
 def encodePVInfo(pvInfo):
@@ -829,6 +833,47 @@ class BlockStorageDomainManifest(sd.StorageDomainManifest):
                            self.logBlkSize * sd.LEASE_BLOCKS)
             return self.getLeasesFilePath(), leaseOffset
         return None, None
+
+    @require_sdm
+    def create_volume_artifacts(self, img_id, vol_id, size,
+                                vol_format, disk_type, desc, src_vol_id):
+        if vol_format == volume.RAW_FORMAT:
+            prealloc = volume.type2name(volume.PREALLOCATED_VOL)
+            lv_size = "%s" % ((size + SECTORS_TO_MB - 1) / SECTORS_TO_MB)
+        else:
+            prealloc = volume.type2name(volume.SPARSE_VOL)
+            lv_size = "%s" % config.get("irs", "volume_utilization_chunk_mb")
+
+        tags = [blockVolume.TAG_VOL_GARBAGE,
+                blockVolume.TAG_PREFIX_PARENT + src_vol_id,
+                blockVolume.TAG_PREFIX_IMAGE + img_id]
+        lvm.createLV(self.sdUUID, vol_id, lv_size, activate=True,
+                     initialTags=tags)
+
+        size = volume.VolumeMetadata.adjust_new_volume_size(
+            self, img_id, vol_id, size, vol_format)
+
+        with self.acquireVolumeMetadataSlot(
+                vol_id, blockVolume.VOLUME_MDNUMBLKS) as mdSlot:
+            lvm.changeLVTags(self.sdUUID, vol_id,
+                             addTags=[blockVolume.TAG_PREFIX_MD + str(mdSlot)])
+
+        meta_id = (self.sdUUID, mdSlot)
+        leaf_type = volume.type2name(volume.LEAF_VOL)
+        blockVolume.BlockVolumeMetadata.newMetadata(
+            meta_id, self.sdUUID, img_id, src_vol_id, size,
+            volume.type2name(vol_format), prealloc, leaf_type, disk_type, desc,
+            volume.LEGAL_VOL)
+        blockVolume.BlockVolumeMetadata.newVolumeLease(meta_id, self.sdUUID,
+                                                       vol_id)
+        image_manifest = ImageManifest(self.getRepoPath())
+        img_path = image_manifest.create_image_dir(self.sdUUID, img_id)
+        return img_path
+
+    @require_sdm
+    def commit_volume_artifacts(self, img_path, img_id, vol_id):
+        lvm.changeLVTags(self.sdUUID, vol_id, addTags=[],
+                         delTags=[blockVolume.TAG_VOL_GARBAGE])
 
 
 class BlockStorageDomain(sd.StorageDomain):

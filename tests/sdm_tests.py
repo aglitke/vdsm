@@ -17,7 +17,6 @@
 #
 # Refer to the README and COPYING files for full details of the license
 #
-
 from testlib import VdsmTestCase
 
 from storage.sdmprotect import sdm_verb, require_sdm, SDMFunctionNotCallable

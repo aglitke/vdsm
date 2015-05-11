@@ -57,6 +57,8 @@ import image
 import volume
 import iscsi
 import misc
+import sdm
+from sdmprotect import sdm_verb
 from misc import deprecated
 import taskManager
 import clusterlock
@@ -75,6 +77,7 @@ import storageServer
 from vdsm import supervdsm
 from vdsm import utils
 from vdsm import qemuimg
+
 
 GUID = "guid"
 NAME = "name"
@@ -3667,3 +3670,27 @@ class HSM(object):
                             their meaning.
         """
         return {'domains': self.domainMonitor.getHostStatus(domains)}
+
+    @public
+    @sdm_verb
+    def createVolumeContainer(self, sdUUID, imgUUID, size, volFormat, diskType,
+                              volUUID, desc, srcImgUUID, srcVolUUID):
+        argsStr = ("sdUUID=%s, imgUUID=%s, size=%s, volFormat=%s, "
+                   "diskType=%s, volUUID=%s, desc=%s, srcImgUUID=%s, "
+                   "srcVolUUID=%s" %
+                   (sdUUID, imgUUID, size, volFormat, diskType, volUUID, desc,
+                    srcImgUUID, srcVolUUID))
+        vars.task.setDefaultException(se.VolumeCreationError(argsStr))
+        dom_manifest = sdCache.produce(sdUUID=sdUUID).get_manifest()
+        misc.validateUUID(imgUUID, 'imgUUID')
+        misc.validateUUID(volUUID, 'volUUID')
+        if srcImgUUID:
+            misc.validateUUID(srcImgUUID, 'srcImgUUID')
+        if srcVolUUID:
+            misc.validateUUID(srcVolUUID, 'srcVolUUID')
+        # Validate volume type and format
+        dom_manifest.validateCreateVolumeParams(volFormat, srcVolUUID)
+
+        return sdm.create_volume_container(dom_manifest, imgUUID, size,
+                                           volFormat, diskType, volUUID, desc,
+                                           srcImgUUID, srcVolUUID)

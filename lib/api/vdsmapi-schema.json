@@ -8750,3 +8750,43 @@
 ##
 {'command': {'class': 'VM', 'name': 'updateVmPolicy'},
  'data': {'vmID': 'UUID', 'params': 'UpdateVmPolicyParams'}}
+
+## Category: @SDM ############################################################
+##
+# @SDM:
+#
+# This namespace is for SDM (storage domain manager) functions.
+#
+# Since: 4.16.0
+##
+{'class': 'SDM'}
+
+##
+# @SDM.createVolumeContainer:
+#
+# Create a new container to hold a volume.
+#
+# @volumeID:         The UUID of the Volume
+#
+# @storagedomainID:  The Storage Domain associated with the Volume
+#
+# @imageID:          The Image associated with the Volume
+#
+# @size:             The Volume size in sectors
+#
+# @volFormat:        The data format to use for the destination Volume
+#
+# @diskType:         An advisory disk usage type
+#
+# @desc:             The Volume description
+#
+# @srcImgUUID:       If specified, create a snapshot from this Image
+#
+# @srcVolUUID:       If specified, create a snapshot from this Volume
+#
+# Since: 4.18.0
+##
+{'command': {'class': 'SDM', 'name': 'createVolumeContainer'},
+ 'data': {'volumeID': 'UUID', 'storagedomainID': 'UUID', 'imageID': 'UUID',
+          'size': 'int', 'volFormat': 'VolumeFormat', 'diskType': 'DiskType',
+          'desc': 'str', '*srcImgUUID': 'UUID', '*srcVolUUID': 'UUID'}}

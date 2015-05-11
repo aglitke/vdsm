@@ -57,6 +57,7 @@ dist_vdsmstorage_PYTHON = \
 	resourceManager.py \
 	sdc.py \
 	sd.py \
+	sdm.py \
 	sdmprotect.py \
 	securable.py \
 	sp.py \

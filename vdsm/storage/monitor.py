@@ -131,6 +131,9 @@ class DomainMonitor(object):
                 status[sdUUID] = monitor.getHostStatus(hostId)
         return status
 
+    def getHostId(self, sdUUID):
+        return self._monitors[sdUUID].hostId
+
     def close(self):
         self.log.info("Stop monitoring all domains")
         self._stopMonitors(self._monitors.values())

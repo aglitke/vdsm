@@ -20,7 +20,9 @@
 
 import errno
 import os
+import random
 import sanlock
+import string
 
 import storage_exception as se
 from vdsm import qemuimg
@@ -35,6 +37,7 @@ import misc
 from misc import deprecated
 import task
 from threadLocal import vars
+from sdmprotect import require_sdm
 
 META_FILEEXT = ".meta"
 LEASE_FILEEXT = ".lease"
@@ -42,6 +45,8 @@ LEASE_FILEOFFSET = 0
 
 BLOCK_SIZE = volume.BLOCK_SIZE
 VOLUME_PERMISSIONS = 0o660
+
+GC_VOL_MD_EXT = '.gctmp'
 
 
 def getDomUuidFromVolumePath(volPath):
@@ -251,6 +256,11 @@ class FileVolumeMetadata(volume.VolumeMetadata):
 
         sdUUID = getDomUuidFromVolumePath(volPath)
         oop.getProcessPool(sdUUID).os.rename(metaPath + ".new", metaPath)
+
+    @classmethod
+    @require_sdm
+    def putMetadataGC(cls, metaId, meta):
+        cls._putMetadata(metaId, meta, GC_VOL_MD_EXT)
 
     def setImage(self, imgUUID):
         """

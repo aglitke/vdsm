@@ -1091,6 +1091,21 @@ class service:
             return image['status']['code'], image['status']['message']
         return 0, image['uuid']
 
+    def createVolumeContainer(self, args):
+        sdUUID, imgUUID, size, volFormat, diskType, volUUID, desc = args[:7]
+
+        srcImgUUID = args[7] if len(args) > 8 else BLANK_UUID
+        srcVolUUID = args[8] if len(args) > 9 else BLANK_UUID
+
+        res = self.s.createVolumeContainer(
+            sdUUID, imgUUID, size, volFormat, diskType, volUUID, desc,
+            srcImgUUID, srcVolUUID)
+
+        if res['status']['code']:
+            return res['status']['code'], res['status']['message']
+
+        return 0, ''
+
     def getVolumeInfo(self, args):
         sdUUID = args[0]
         spUUID = args[1]
@@ -2528,6 +2543,11 @@ if __name__ == '__main__':
                           '<srcImgUUID> <srcVolUUID> <initialSize>',
                           'Creates new volume or snapshot'
                           )),
+        'createVolumeContainer': (serv.createVolumeContainer, (
+            '<sdUUID> <imgUUID> <size> <volFormat> <diskType> <volUUID> '
+            '<desc> [<srcImgUUID>] [<srcVolUUID>]',
+            'Create a new volume or snapshot container'
+        )),
         'extendVolumeSize': (serv.extendVolumeSize, (
             '<spUUID> <sdUUID> <imgUUID> <volUUID> <newSize>',
             'Extend the volume size (virtual disk size seen by the guest).',

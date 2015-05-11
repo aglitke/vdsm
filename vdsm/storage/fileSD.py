@@ -29,7 +29,9 @@ import re
 import sd
 import storage_exception as se
 import fileUtils
+from image import ImageManifest
 import fileVolume
+import volume
 import misc
 import outOfProcess as oop
 from remoteFileHandler import Timeout
@@ -38,6 +40,7 @@ from vdsm import constants
 from vdsm.utils import stripNewLines
 from vdsm import supervdsm
 import mount
+from sdmprotect import require_sdm
 
 REMOTE_PATH = "REMOTE_PATH"
 
@@ -342,6 +345,63 @@ class FileStorageDomainManifest(sd.StorageDomainManifest):
                        removedImages)
         for imageDir in removedImages:
             self.oop.fileUtils.cleanupdir(imageDir)
+
+    def _get_new_artifacts_dir(self, img_id):
+        image_manifest = ImageManifest(self.getRepoPath())
+        img_path = image_manifest.getImageDir(self.sdUUID, img_id)
+        if self.oop.os.path.exists(img_path):
+            # We have an existing legal image and we can just use it
+            return img_path
+
+        # This is going to be a new image.  Create a garbage-collectible new
+        # directory in case we fail to create the volume
+        new_path = os.path.join(self.domaindir, sd.DOMAIN_IMAGES,
+                                sd.REMOVED_IMAGE_PREFIX + img_id)
+        self.oop.os.mkdir(new_path)
+        return new_path
+
+    @require_sdm
+    def create_volume_artifacts(self, img_id, vol_id, size, vol_format,
+                                disk_type, desc, src_vol_id):
+        img_path = self._get_new_artifacts_dir(img_id)
+        vol_path = os.path.join(img_path, vol_id)
+        meta_id = (vol_path,)
+        leaf_type = volume.type2name(volume.LEAF_VOL)
+        # File volumes are always created sparse
+        prealloc = volume.type2name(volume.SPARSE_VOL)
+        meta = fileVolume.FileVolumeMetadata.makeMetadata(
+            self.sdUUID, img_id, src_vol_id, size,
+            volume.type2name(vol_format), prealloc,
+            leaf_type, disk_type, desc, volume.LEGAL_VOL)
+        fileVolume.FileVolumeMetadata.putMetadataGC(meta_id, meta)
+
+        fileVolume.FileVolumeMetadata.newVolumeLease(meta_id, self.sdUUID,
+                                                     vol_id)
+
+        size_bytes = size * fileVolume.BLOCK_SIZE
+        trunc_size = size_bytes if vol_format == volume.RAW_FORMAT else 0
+        try:
+            self.oop.truncateFile(vol_path, trunc_size,
+                                  mode=fileVolume.VOLUME_PERMISSIONS,
+                                  creatExcl=True)
+        except OSError as e:
+            if e.errno == errno.EEXIST:
+                raise se.VolumeAlreadyExists(vol_path)
+            raise
+        return img_path
+
+    @require_sdm
+    def commit_volume_artifacts(self, img_path, img_id, vol_id):
+        vol_path = os.path.join(img_path, vol_id)
+        meta_file = fileVolume.FileVolumeMetadata._metaVolumePath(vol_path)
+        gc_meta_file = meta_file + fileVolume.GC_VOL_MD_EXT
+        self.oop.os.rename(gc_meta_file, meta_file)
+
+        # If we created a new image directory, rename it to the correct name
+        if sd.REMOVED_IMAGE_PREFIX in img_path:
+            image_manifest = ImageManifest(self.getRepoPath())
+            new_path = image_manifest.getImageDir(self.sdUUID, img_id)
+            self.oop.os.rename(img_path, new_path)
 
 
 class FileStorageDomain(sd.StorageDomain):
