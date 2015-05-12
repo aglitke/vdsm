@@ -900,6 +900,10 @@ class BlockStorageDomain(sd.StorageDomain):
         # Create VMS file system
         _createVMSfs(os.path.join("/dev", vgName, MASTERLV))
 
+        # XXX: When running an iSCSI server and initiator on the same host we
+        # need to wait a bit for IO to settle before deactivating LVs
+        import time
+        time.sleep(10)
         lvm.deactivateLVs(vgName, MASTERLV)
 
         path = lvm.lvPath(vgName, sd.METADATA)
