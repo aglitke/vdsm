@@ -69,22 +69,59 @@ log = logging.getLogger('Storage.Volume')
 rmanager = rm.ResourceManager.getInstance()
 
 
-class BlockVolume(volume.Volume):
-    """ Actually represents a single volume (i.e. part of virtual disk).
-    """
-
+class BlockVolumeMetadata(volume.VolumeMetadata):
     def __init__(self, repoPath, sdUUID, imgUUID, volUUID):
-        self.metaoff = None
-        volume.Volume.__init__(self, repoPath, sdUUID, imgUUID, volUUID)
-        self.lvmActivationNamespace = sd.getNamespace(self.sdUUID,
-                                                      LVM_ACTIVATION_NAMESPACE)
+        volume.VolumeMetadata.__init__(self, repoPath, sdUUID, imgUUID,
+                                       volUUID)
+
+    def validateImagePath(self):
+        """
+        Block SD supports lazy image dir creation
+        """
+        imageDir = image.ImageManifest(self.repoPath).getImageDir(self.sdUUID,
+                                                                  self.imgUUID)
+        if not os.path.isdir(imageDir):
+            try:
+                os.mkdir(imageDir, 0o755)
+            except Exception:
+                self.log.exception("Unexpected error")
+                raise se.ImagePathError(imageDir)
+        self._imagePath = imageDir
+
+    def validateVolumePath(self):
+        """
+        Block SD supports lazy volume link creation. Note that the volume can
+        be still inactive.
+        An explicit prepare is required to validate that the volume is active.
+        """
+        if not self._imagePath:
+            self.validateImagePath()
+        volPath = os.path.join(self._imagePath, self.volUUID)
+        if not os.path.lexists(volPath):
+            srcPath = lvm.lvPath(self.sdUUID, self.volUUID)
+            self.log.debug("Creating symlink from %s to %s", srcPath, volPath)
+            os.symlink(srcPath, volPath)
+        self._volumePath = volPath
 
     def validate(self):
         try:
             lvm.getLV(self.sdUUID, self.volUUID)
         except se.LogicalVolumeDoesNotExistError:
             raise se.VolumeDoesNotExist(self.volUUID)
-        volume.Volume.validate(self)
+        volume.VolumeMetadata.validate(self)
+
+
+class BlockVolume(volume.Volume):
+    """ Actually represents a single volume (i.e. part of virtual disk).
+    """
+    MetadataClass = BlockVolumeMetadata
+
+    def __init__(self, repoPath, sdUUID, imgUUID, volUUID):
+        md = self.MetadataClass(repoPath, sdUUID, imgUUID, volUUID)
+        self.metaoff = None
+        volume.Volume.__init__(self, md)
+        self.lvmActivationNamespace = sd.getNamespace(self.sdUUID,
+                                                      LVM_ACTIVATION_NAMESPACE)
 
     def refreshVolume(self):
         lvm.refreshLVs(self.sdUUID, (self.volUUID,))
@@ -328,7 +365,7 @@ class BlockVolume(volume.Volume):
         """
         self.log.info("Rename volume %s as %s ", self.volUUID, newUUID)
         if not self.imagePath:
-            self.validateImagePath()
+            self.md.validateImagePath()
 
         if os.path.lexists(self.getVolumePath()):
             os.unlink(self.getVolumePath())
@@ -340,8 +377,8 @@ class BlockVolume(volume.Volume):
                 [self.sdUUID, newUUID, self.volUUID]))
 
         lvm.renameLV(self.sdUUID, self.volUUID, newUUID)
-        self.volUUID = newUUID
-        self.volumePath = os.path.join(self.imagePath, newUUID)
+        self.md.volUUID = newUUID
+        self.md.volumePath = os.path.join(self.imagePath, newUUID)
 
     def getDevPath(self):
         """
@@ -412,35 +449,6 @@ class BlockVolume(volume.Volume):
 
             if pvolUUID != volume.BLANK_UUID:
                 cls.teardown(sdUUID=sdUUID, volUUID=pvolUUID, justme=False)
-
-    def validateImagePath(self):
-        """
-        Block SD supports lazy image dir creation
-        """
-        imageDir = image.Image(self.repoPath).getImageDir(self.sdUUID,
-                                                          self.imgUUID)
-        if not os.path.isdir(imageDir):
-            try:
-                os.mkdir(imageDir, 0o755)
-            except Exception:
-                self.log.error("Unexpected error", exc_info=True)
-                raise se.ImagePathError(imageDir)
-        self.imagePath = imageDir
-
-    def validateVolumePath(self):
-        """
-        Block SD supports lazy volume link creation. Note that the volume can
-        be still inactive.
-        An explicit prepare is required to validate that the volume is active.
-        """
-        if not self.imagePath:
-            self.validateImagePath()
-        volPath = os.path.join(self.imagePath, self.volUUID)
-        if not os.path.lexists(volPath):
-            srcPath = lvm.lvPath(self.sdUUID, self.volUUID)
-            self.log.debug("Creating symlink from %s to %s", srcPath, volPath)
-            os.symlink(srcPath, volPath)
-        self.volumePath = volPath
 
     def getVolumeTag(self, tagPrefix):
         return _getVolumeTag(self.sdUUID, self.volUUID, tagPrefix)

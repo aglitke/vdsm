@@ -30,6 +30,7 @@ import outOfProcess as oop
 import volume
 import image
 import sd
+import fileSD
 import misc
 from misc import deprecated
 import task
@@ -51,15 +52,84 @@ def getDomUuidFromVolumePath(volPath):
     return sdUUID
 
 
-class FileVolume(volume.Volume):
-    """ Actually represents a single volume (i.e. part of virtual disk).
-    """
+class FileVolumeMetadata(volume.VolumeMetadata):
     def __init__(self, repoPath, sdUUID, imgUUID, volUUID):
-        volume.Volume.__init__(self, repoPath, sdUUID, imgUUID, volUUID)
+        volume.VolumeMetadata.__init__(self, repoPath, sdUUID, imgUUID,
+                                       volUUID)
 
     @property
     def oop(self):
         return oop.getProcessPool(self.sdUUID)
+
+    def validateImagePath(self):
+        """
+        Validate that the image dir exists and valid.
+        In the file volume repositories,
+        the image dir must exists after creation its first volume.
+        """
+        imageDir = image.ImageManifest(self.repoPath).getImageDir(self.sdUUID,
+                                                                  self.imgUUID)
+        if not self.oop.os.path.isdir(imageDir):
+            raise se.ImagePathError(imageDir)
+        if not self.oop.os.access(imageDir, os.R_OK | os.W_OK | os.X_OK):
+            raise se.ImagePathError(imageDir)
+        self._imagePath = imageDir
+
+    @classmethod
+    def _metaVolumePath(cls, volPath):
+        if volPath:
+            return volPath + META_FILEEXT
+        else:
+            return None
+
+    def _getMetaVolumePath(self, vol_path=None):
+        """
+        Get the volume metadata file/link path
+        """
+        if not vol_path:
+            vol_path = self.getVolumePath()
+        return self._metaVolumePath(vol_path)
+
+    def validateMetaVolumePath(self):
+        """
+        In file volume repositories,
+        the volume metadata must exists after the image/volume is created.
+        """
+        metaVolumePath = self._getMetaVolumePath()
+        if not self.oop.fileUtils.pathExists(metaVolumePath):
+            raise se.VolumeDoesNotExist(self.volUUID)
+
+    def validateVolumePath(self):
+        """
+        In file volume repositories,
+        the volume file and the volume md must exists after
+        the image/volume is created.
+        """
+        self.log.debug("validate path for %s" % self.volUUID)
+        if not self.imagePath:
+            self.validateImagePath()
+        volPath = os.path.join(self.imagePath, self.volUUID)
+        if not self.oop.fileUtils.pathExists(volPath):
+            raise se.VolumeDoesNotExist(self.volUUID)
+
+        self._volumePath = volPath
+        domainPath = os.path.join(self.repoPath, self.sdUUID)
+        if not fileSD.FileStorageDomainManifest(domainPath).isISO():
+            self.validateMetaVolumePath()
+
+
+class FileVolume(volume.Volume):
+    """ Actually represents a single volume (i.e. part of virtual disk).
+    """
+    MetadataClass = FileVolumeMetadata
+
+    def __init__(self, repoPath, sdUUID, imgUUID, volUUID):
+        md = self.MetadataClass(repoPath, sdUUID, imgUUID, volUUID)
+        volume.Volume.__init__(self, md)
+
+    @property
+    def oop(self):
+        return self.md.oop()
 
     @staticmethod
     def file_setrw(volPath, rw):
@@ -438,7 +508,7 @@ class FileVolume(volume.Volume):
         """
         self.log.info("Rename volume %s as %s ", self.volUUID, newUUID)
         if not self.imagePath:
-            self.validateImagePath()
+            self.md.validateImagePath()
         volPath = os.path.join(self.imagePath, newUUID)
         metaPath = self._getMetaVolumePath(volPath)
         prevMetaPath = self._getMetaVolumePath()
@@ -473,29 +543,12 @@ class FileVolume(volume.Volume):
         except OSError as e:
             if e.errno != os.errno.ENOENT:
                 raise
-        self.volUUID = newUUID
-        self.volumePath = volPath
-
-    def validateImagePath(self):
-        """
-        Validate that the image dir exists and valid.
-        In the file volume repositories,
-        the image dir must exists after creation its first volume.
-        """
-        imageDir = image.Image(self.repoPath).getImageDir(self.sdUUID,
-                                                          self.imgUUID)
-        if not self.oop.os.path.isdir(imageDir):
-            raise se.ImagePathError(imageDir)
-        if not self.oop.os.access(imageDir, os.R_OK | os.W_OK | os.X_OK):
-            raise se.ImagePathError(imageDir)
-        self.imagePath = imageDir
+        self.md.volUUID = newUUID
+        self.md.volumePath = volPath
 
     @classmethod
     def __metaVolumePath(cls, volPath):
-        if volPath:
-            return volPath + META_FILEEXT
-        else:
-            return None
+        return cls.MetadataClass._metaVolumePath(volPath)
 
     @classmethod
     def __leaseVolumePath(cls, vol_path):
@@ -505,12 +558,7 @@ class FileVolume(volume.Volume):
             return None
 
     def _getMetaVolumePath(self, vol_path=None):
-        """
-        Get the volume metadata file/link path
-        """
-        if not vol_path:
-            vol_path = self.getVolumePath()
-        return self.__metaVolumePath(vol_path)
+        return self.md._getMetaVolumePath(vol_path)
 
     def _getLeaseVolumePath(self, vol_path=None):
         """
@@ -519,32 +567,6 @@ class FileVolume(volume.Volume):
         if not vol_path:
             vol_path = self.getVolumePath()
         return self.__leaseVolumePath(vol_path)
-
-    def validateVolumePath(self):
-        """
-        In file volume repositories,
-        the volume file and the volume md must exists after
-        the image/volume is created.
-        """
-        self.log.debug("validate path for %s" % self.volUUID)
-        if not self.imagePath:
-            self.validateImagePath()
-        volPath = os.path.join(self.imagePath, self.volUUID)
-        if not self.oop.fileUtils.pathExists(volPath):
-            raise se.VolumeDoesNotExist(self.volUUID)
-
-        self.volumePath = volPath
-        if not sdCache.produce(self.sdUUID).isISO():
-            self.validateMetaVolumePath()
-
-    def validateMetaVolumePath(self):
-        """
-        In file volume repositories,
-        the volume metadata must exists after the image/volume is created.
-        """
-        metaVolumePath = self._getMetaVolumePath()
-        if not self.oop.fileUtils.pathExists(metaVolumePath):
-            raise se.VolumeDoesNotExist(self.volUUID)
 
     def getVolumeSize(self, bs=BLOCK_SIZE):
         """

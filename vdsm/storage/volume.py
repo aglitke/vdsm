@@ -126,28 +126,34 @@ class VmVolumeInfo(object):
     TYPE_NETWORK = "network"
 
 
-class Volume(object):
-    log = logging.getLogger('Storage.Volume')
+class VolumeMetadata(object):
+    log = logging.getLogger('Storage.VolumeMetadata')
 
     def __init__(self, repoPath, sdUUID, imgUUID, volUUID):
         self.repoPath = repoPath
         self.sdUUID = sdUUID
         self.imgUUID = imgUUID
         self.volUUID = volUUID
-        self.volumePath = None
-        self.imagePath = None
+        self._volumePath = None
+        self._imagePath = None
+        self.voltype = None
+
         if not imgUUID or imgUUID == BLANK_UUID:
             raise se.InvalidParameterException("imgUUID", imgUUID)
         if not volUUID or volUUID == BLANK_UUID:
             raise se.InvalidParameterException("volUUID", volUUID)
-        self.voltype = None
-        self.validate()
 
-    @classmethod
-    def _getModuleAndClass(cls):
-        clsName = cls.__name__
-        clsModule = cls.__module__.split(".").pop()
-        return clsModule, clsName
+    @property
+    def imagePath(self):
+        if self._imagePath is None:
+            self.validateImagePath()
+        return self._imagePath
+
+    @property
+    def volumePath(self):
+        if self._volumePath is None:
+            self.validateVolumePath()
+        return self._volumePath
 
     def validate(self):
         """
@@ -155,6 +161,56 @@ class Volume(object):
         """
         self.validateImagePath()
         self.validateVolumePath()
+
+    def getVolumePath(self):
+        """
+        Get the path of the volume file/link
+        """
+        if not self._volumePath:
+            raise se.VolumeAccessError(self.volUUID)
+        return self._volumePath
+
+
+class Volume(object):
+    log = logging.getLogger('Storage.Volume')
+
+    def __init__(self, md):
+        self.md = md
+        self.md.validate()
+
+    @property
+    def sdUUID(self):
+        return self.md.sdUUID
+
+    @property
+    def imgUUID(self):
+        return self.md.imgUUID
+
+    @property
+    def volUUID(self):
+        return self.md.volUUID
+
+    @property
+    def repoPath(self):
+        return self.md.repoPath
+
+    @property
+    def volumePath(self):
+        return self.md.volumePath
+
+    @property
+    def imagePath(self):
+        return self.md.imagePath
+
+    @property
+    def voltype(self):
+        return self.md.voltype
+
+    @classmethod
+    def _getModuleAndClass(cls):
+        clsName = cls.__name__
+        clsModule = cls.__module__.split(".").pop()
+        return clsModule, clsName
 
     def __str__(self):
         return str(self.volUUID)
@@ -619,12 +675,12 @@ class Volume(object):
 
     def setDomain(self, sdUUID):
         self.setMetaParam(DOMAIN, sdUUID)
-        self.sdUUID = sdUUID
+        self.md.sdUUID = sdUUID
         return self.sdUUID
 
     def setShared(self):
         self.setMetaParam(VOLTYPE, type2name(SHARED_VOL))
-        self.voltype = type2name(SHARED_VOL)
+        self.md.voltype = type2name(SHARED_VOL)
         self.setrw(rw=False)
         return self.voltype
 
@@ -643,19 +699,19 @@ class Volume(object):
 
     def setLeaf(self):
         self.setMetaParam(VOLTYPE, type2name(LEAF_VOL))
-        self.voltype = type2name(LEAF_VOL)
+        self.md.voltype = type2name(LEAF_VOL)
         self.setrw(rw=True)
         return self.voltype
 
     def setInternal(self):
         self.setMetaParam(VOLTYPE, type2name(INTERNAL_VOL))
-        self.voltype = type2name(INTERNAL_VOL)
+        self.md.voltype = type2name(INTERNAL_VOL)
         self.setrw(rw=False)
         return self.voltype
 
     def getVolType(self):
         if not self.voltype:
-            self.voltype = self.getMetaParam(VOLTYPE)
+            self.md.voltype = self.getMetaParam(VOLTYPE)
         return self.voltype
 
     def getSize(self):
@@ -894,12 +950,7 @@ class Volume(object):
         self.setParentMeta(puuid)
 
     def getVolumePath(self):
-        """
-        Get the path of the volume file/link
-        """
-        if not self.volumePath:
-            raise se.VolumeAccessError(self.volUUID)
-        return self.volumePath
+        return self.md.getVolumePath()
 
     def getVmVolumeInfo(self):
         """
