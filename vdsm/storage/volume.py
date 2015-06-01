@@ -238,6 +238,12 @@ class Volume(object):
         """
         return self.md.getMetadata(metaId)
 
+    def getParent(self):
+        """
+        Return parent volume UUID
+        """
+        return self.md.getParent()
+
     @classmethod
     def _getModuleAndClass(cls):
         clsName = cls.__name__
