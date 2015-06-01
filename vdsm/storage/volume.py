@@ -180,6 +180,19 @@ class VolumeMetadata(object):
             raise se.VolumeAccessError(self.volUUID)
         return self._volumePath
 
+    def setMetaParam(self, key, value):
+        """
+        Set a value of a specific key
+        """
+        meta = self.getMetadata()
+        try:
+            meta[str(key)] = str(value)
+            self.setMetadata(meta)
+        except Exception:
+            self.log.error("Volume.setMetaParam: %s: %s=%s" %
+                           (self.volUUID, key, value))
+            raise
+
 
 class Volume(object):
     log = logging.getLogger('Storage.Volume')
@@ -991,14 +1004,7 @@ class Volume(object):
         """
         Set a value of a specific key
         """
-        meta = self.getMetadata()
-        try:
-            meta[str(key)] = str(value)
-            self.setMetadata(meta)
-        except Exception:
-            self.log.error("Volume.setMetaParam: %s: %s=%s" %
-                           (self.volUUID, key, value))
-            raise
+        self.md.setMetaParam(key, value)
 
     def getVolumeParams(self, bs=BLOCK_SIZE):
         volParams = {}

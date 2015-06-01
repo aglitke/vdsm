@@ -158,6 +158,39 @@ class BlockVolumeMetadata(volume.VolumeMetadata):
             raise se.VolumeDoesNotExist(self.volUUID)
         volume.VolumeMetadata.validate(self)
 
+    def setMetadata(self, meta, metaId=None):
+        """
+        Set the meta data hash as the new meta data of the Volume
+        """
+        if not metaId:
+            metaId = self.getMetadataId()
+
+        try:
+            self._putMetadata(metaId, meta)
+        except Exception as e:
+            self.log.error(e, exc_info=True)
+            raise se.VolumeMetadataWriteError("%s: %s" % (metaId, e))
+
+    @classmethod
+    def _putMetadata(cls, metaId, meta):
+        vgname, offs = metaId
+
+        lines = ["%s=%s\n" % (key.strip(), str(value).strip())
+                 for key, value in meta.iteritems()]
+        lines.append("EOF\n")
+
+        metavol = lvm.lvPath(vgname, sd.METADATA)
+        with fileUtils.DirectFile(metavol, "r+d") as f:
+            data = "".join(lines)
+            if len(data) > VOLUME_METASIZE:
+                cls.log.warn("Truncating volume metadata (%s)", data)
+                data = data[:VOLUME_METASIZE]
+            else:
+                data += "\0" * (VOLUME_METASIZE - len(data))
+
+            f.seek(offs * VOLUME_METASIZE)
+            f.write(data)
+
 
 class BlockVolume(volume.Volume):
     """ Actually represents a single volume (i.e. part of virtual disk).
@@ -594,23 +627,7 @@ class BlockVolume(volume.Volume):
 
     @classmethod
     def __putMetadata(cls, metaId, meta):
-        vgname, offs = metaId
-
-        lines = ["%s=%s\n" % (key.strip(), str(value).strip())
-                 for key, value in meta.iteritems()]
-        lines.append("EOF\n")
-
-        metavol = lvm.lvPath(vgname, sd.METADATA)
-        with fileUtils.DirectFile(metavol, "r+d") as f:
-            data = "".join(lines)
-            if len(data) > VOLUME_METASIZE:
-                cls.log.warn("Truncating volume metadata (%s)", data)
-                data = data[:VOLUME_METASIZE]
-            else:
-                data += "\0" * (VOLUME_METASIZE - len(data))
-
-            f.seek(offs * VOLUME_METASIZE)
-            f.write(data)
+        cls.MetadataClass._putMetadata(metaId, meta)
 
     @classmethod
     def createMetadata(cls, metaId, meta):
@@ -620,17 +637,7 @@ class BlockVolume(volume.Volume):
         return self.md.getMetaOffset()
 
     def setMetadata(self, meta, metaId=None):
-        """
-        Set the meta data hash as the new meta data of the Volume
-        """
-        if not metaId:
-            metaId = self.getMetadataId()
-
-        try:
-            self.__putMetadata(metaId, meta)
-        except Exception as e:
-            self.log.error(e, exc_info=True)
-            raise se.VolumeMetadataWriteError("%s: %s" % (metaId, e))
+        return self.md.setMetadata(meta, metaId)
 
     @classmethod
     def newVolumeLease(cls, metaId, sdUUID, volUUID):
