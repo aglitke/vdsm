@@ -188,6 +188,9 @@ class VolumeMetadata(object):
     def isLeaf(self):
         return self.getVolType() == type2name(LEAF_VOL)
 
+    def isShared(self):
+        return self.getVolType() == type2name(SHARED_VOL)
+
     def setMetaParam(self, key, value):
         """
         Set a value of a specific key
@@ -219,6 +222,30 @@ class VolumeMetadata(object):
         self.voltype = type2name(LEAF_VOL)
         self.setrw(rw=True)
         return self.voltype
+
+    def setInternal(self):
+        self.setMetaParam(VOLTYPE, type2name(INTERNAL_VOL))
+        self.voltype = type2name(INTERNAL_VOL)
+        self.setrw(rw=False)
+        return self.voltype
+
+    def recheckIfLeaf(self):
+        """
+        Recheck if I am a leaf.
+        """
+
+        if self.isShared():
+            return False
+
+        type = self.getVolType()
+        childrenNum = len(self.getChildren())
+
+        if childrenNum == 0 and type != LEAF_VOL:
+            self.setLeaf()
+        elif childrenNum > 0 and type != INTERNAL_VOL:
+            self.setInternal()
+
+        return self.isLeaf()
 
 
 class Volume(object):
@@ -270,6 +297,13 @@ class Volume(object):
         Return parent volume UUID
         """
         return self.md.getParent()
+
+    def getChildren(self):
+        """ Return children volume UUIDs.
+
+        Children can be found in any image of the volume SD.
+        """
+        return self.md.getChildren()
 
     @deprecated  # valid only for domain version < 3, see volume.setrw
     def _setrw(self, rw):
@@ -764,10 +798,7 @@ class Volume(object):
         return self.md.setLeaf()
 
     def setInternal(self):
-        self.setMetaParam(VOLTYPE, type2name(INTERNAL_VOL))
-        self.md.voltype = type2name(INTERNAL_VOL)
-        self.setrw(rw=False)
-        return self.voltype
+        return self.md.setInternal()
 
     def getVolType(self):
         return self.md.getVolType()
@@ -824,7 +855,7 @@ class Volume(object):
             return False
 
     def isShared(self):
-        return self.getVolType() == type2name(SHARED_VOL)
+        return self.md.isShared()
 
     def isLeaf(self):
         return self.md.isLeaf()
@@ -839,19 +870,7 @@ class Volume(object):
         """
         Recheck if I am a leaf.
         """
-
-        if self.isShared():
-            return False
-
-        type = self.getVolType()
-        childrenNum = len(self.getChildren())
-
-        if childrenNum == 0 and type != LEAF_VOL:
-            self.setLeaf()
-        elif childrenNum > 0 and type != INTERNAL_VOL:
-            self.setInternal()
-
-        return self.isLeaf()
+        return self.md.recheckIfLeaf()
 
     @contextmanager
     def scopedPrepare(self, rw=True, justme=False, chainrw=False, setrw=False,
