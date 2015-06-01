@@ -159,6 +159,31 @@ class BlockVolumeMetadata(volume.VolumeMetadata):
             raise se.VolumeDoesNotExist(self.volUUID)
         volume.VolumeMetadata.validate(self)
 
+    def setMetadata(self, meta, metaId=None):
+        """
+        Set the meta data hash as the new meta data of the Volume
+        """
+        if not metaId:
+            metaId = self.getMetadataId()
+
+        try:
+            self._putMetadata(metaId, meta)
+        except Exception as e:
+            self.log.error(e, exc_info=True)
+            raise se.VolumeMetadataWriteError("%s: %s" % (metaId, e))
+
+    @classmethod
+    def _putMetadata(cls, metaId, meta):
+        vgname, offs = metaId
+
+        data = cls.formatMetadata(meta)
+        data += "\0" * (volume.METADATA_SIZE - len(data))
+
+        metavol = lvm.lvPath(vgname, sd.METADATA)
+        with fileUtils.DirectFile(metavol, "r+d") as f:
+            f.seek(offs * volume.METADATA_SIZE)
+            f.write(data)
+
 
 class BlockVolume(volume.Volume):
     """ Actually represents a single volume (i.e. part of virtual disk).
@@ -626,15 +651,7 @@ class BlockVolume(volume.Volume):
 
     @classmethod
     def __putMetadata(cls, metaId, meta):
-        vgname, offs = metaId
-
-        data = cls.formatMetadata(meta)
-        data += "\0" * (volume.METADATA_SIZE - len(data))
-
-        metavol = lvm.lvPath(vgname, sd.METADATA)
-        with fileUtils.DirectFile(metavol, "r+d") as f:
-            f.seek(offs * volume.METADATA_SIZE)
-            f.write(data)
+        cls.MetadataClass._putMetadata(metaId, meta)
 
     @classmethod
     def createMetadata(cls, metaId, meta):
@@ -644,17 +661,7 @@ class BlockVolume(volume.Volume):
         return self._md.getMetaOffset()
 
     def setMetadata(self, meta, metaId=None):
-        """
-        Set the meta data hash as the new meta data of the Volume
-        """
-        if not metaId:
-            metaId = self.getMetadataId()
-
-        try:
-            self.__putMetadata(metaId, meta)
-        except Exception as e:
-            self.log.error(e, exc_info=True)
-            raise se.VolumeMetadataWriteError("%s: %s" % (metaId, e))
+        return self._md.setMetadata(meta, metaId)
 
     @classmethod
     def newVolumeLease(cls, metaId, sdUUID, volUUID):

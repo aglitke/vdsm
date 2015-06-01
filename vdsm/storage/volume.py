@@ -220,6 +220,34 @@ class VolumeMetadata(object):
             raise se.VolumeAccessError(self.volUUID)
         return self._volumePath
 
+    def setMetaParam(self, key, value):
+        """
+        Set a value of a specific key
+        """
+        meta = self.getMetadata()
+        try:
+            meta[str(key)] = str(value)
+            self.setMetadata(meta)
+        except Exception:
+            self.log.error("Volume.setMetaParam: %s: %s=%s" %
+                           (self.volUUID, key, value))
+            raise
+
+    @classmethod
+    def formatMetadata(cls, meta):
+        """
+        Format metadata string in storage format.
+
+        Raises MetadataOverflowError if formatted metadata is too long.
+        """
+        lines = ["%s=%s\n" % (key.strip(), str(value).strip())
+                 for key, value in meta.iteritems()]
+        lines.append("EOF\n")
+        data = "".join(lines)
+        if len(data) > METADATA_SIZE:
+            raise se.MetadataOverflowError(data)
+        return data
+
 
 class Volume(object):
     log = logging.getLogger('Storage.Volume')
@@ -974,21 +1002,6 @@ class Volume(object):
         return meta
 
     @classmethod
-    def formatMetadata(cls, meta):
-        """
-        Format metadata string in storage format.
-
-        Raises MetadataOverflowError if formatted metadata is too long.
-        """
-        lines = ["%s=%s\n" % (key.strip(), str(value).strip())
-                 for key, value in meta.iteritems()]
-        lines.append("EOF\n")
-        data = "".join(lines)
-        if len(data) > METADATA_SIZE:
-            raise se.MetadataOverflowError(data)
-        return data
-
-    @classmethod
     def validateDescription(cls, desc):
         desc = str(desc)
         # We cannot fail when the description is too long, since we must
@@ -1077,14 +1090,7 @@ class Volume(object):
         """
         Set a value of a specific key
         """
-        meta = self.getMetadata()
-        try:
-            meta[str(key)] = str(value)
-            self.setMetadata(meta)
-        except Exception:
-            self.log.error("Volume.setMetaParam: %s: %s=%s" %
-                           (self.volUUID, key, value))
-            raise
+        self._md.setMetaParam(key, value)
 
     def getVolumeParams(self, bs=BLOCK_SIZE):
         volParams = {}
