@@ -73,6 +73,54 @@ class BlockVolumeMetadata(volume.VolumeMetadata):
     def __init__(self, repoPath, sdUUID, imgUUID, volUUID):
         volume.VolumeMetadata.__init__(self, repoPath, sdUUID, imgUUID,
                                        volUUID)
+        self.metaoff = None
+
+    def getMetadataId(self):
+        """
+        Get the metadata Id
+        """
+        return (self.sdUUID, self.getMetaOffset())
+
+    def getMetaOffset(self):
+        if self.metaoff:
+            return self.metaoff
+        try:
+            md = _getVolumeTag(self.sdUUID, self.volUUID, TAG_PREFIX_MD)
+        except se.MissingTagOnLogicalVolume:
+            self.log.error("missing offset tag on volume %s/%s",
+                           self.sdUUID, self.volUUID, exc_info=True)
+            raise se.VolumeMetadataReadError(
+                "missing offset tag on volume %s/%s" %
+                (self.sdUUID, self.volUUID))
+        else:
+            return int(md)
+
+    def getMetadata(self, metaId=None):
+        """
+        Get Meta data array of key,values lines
+        """
+        if not metaId:
+            metaId = self.getMetadataId()
+
+        vgname, offs = metaId
+
+        try:
+            meta = misc.readblock(lvm.lvPath(vgname, sd.METADATA),
+                                  offs * VOLUME_METASIZE, VOLUME_METASIZE)
+            out = {}
+            for l in meta:
+                if l.startswith("EOF"):
+                    return out
+                if l.find("=") < 0:
+                    continue
+                key, value = l.split("=")
+                out[key.strip()] = value.strip()
+
+        except Exception as e:
+            self.log.error(e, exc_info=True)
+            raise se.VolumeMetadataReadError("%s: %s" % (metaId, e))
+
+        return out
 
     def validateImagePath(self):
         """
@@ -118,10 +166,13 @@ class BlockVolume(volume.Volume):
 
     def __init__(self, repoPath, sdUUID, imgUUID, volUUID):
         md = self.MetadataClass(repoPath, sdUUID, imgUUID, volUUID)
-        self.metaoff = None
         volume.Volume.__init__(self, md)
         self.lvmActivationNamespace = sd.getNamespace(self.sdUUID,
                                                       LVM_ACTIVATION_NAMESPACE)
+
+    @property
+    def metaoff(self):
+        return self.md.metaoff
 
     def refreshVolume(self):
         lvm.refreshLVs(self.sdUUID, (self.volUUID,))
@@ -566,51 +617,7 @@ class BlockVolume(volume.Volume):
         cls.__putMetadata(metaId, meta)
 
     def getMetaOffset(self):
-        if self.metaoff:
-            return self.metaoff
-        try:
-            md = _getVolumeTag(self.sdUUID, self.volUUID, TAG_PREFIX_MD)
-        except se.MissingTagOnLogicalVolume:
-            self.log.error("missing offset tag on volume %s/%s",
-                           self.sdUUID, self.volUUID, exc_info=True)
-            raise se.VolumeMetadataReadError(
-                "missing offset tag on volume %s/%s" %
-                (self.sdUUID, self.volUUID))
-        else:
-            return int(md)
-
-    def getMetadataId(self):
-        """
-        Get the metadata Id
-        """
-        return (self.sdUUID, self.getMetaOffset())
-
-    def getMetadata(self, metaId=None):
-        """
-        Get Meta data array of key,values lines
-        """
-        if not metaId:
-            metaId = self.getMetadataId()
-
-        vgname, offs = metaId
-
-        try:
-            meta = misc.readblock(lvm.lvPath(vgname, sd.METADATA),
-                                  offs * VOLUME_METASIZE, VOLUME_METASIZE)
-            out = {}
-            for l in meta:
-                if l.startswith("EOF"):
-                    return out
-                if l.find("=") < 0:
-                    continue
-                key, value = l.split("=")
-                out[key.strip()] = value.strip()
-
-        except Exception as e:
-            self.log.error(e, exc_info=True)
-            raise se.VolumeMetadataReadError("%s: %s" % (metaId, e))
-
-        return out
+        return self.md.getMetaOffset()
 
     def setMetadata(self, meta, metaId=None):
         """

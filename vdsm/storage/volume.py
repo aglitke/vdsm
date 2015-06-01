@@ -162,6 +162,16 @@ class VolumeMetadata(object):
         self.validateImagePath()
         self.validateVolumePath()
 
+    def getMetaParam(self, key):
+        """
+        Get a value of a specific key
+        """
+        meta = self.getMetadata()
+        try:
+            return meta[key]
+        except KeyError:
+            raise se.MetaDataKeyNotFoundError(str(meta) + ":" + str(key))
+
     def getVolumePath(self):
         """
         Get the path of the volume file/link
@@ -205,6 +215,15 @@ class Volume(object):
     @property
     def voltype(self):
         return self.md.voltype
+
+    def getMetadataId(self):
+        return self.md.getMetadataId()
+
+    def getMetadata(self, metaId=None):
+        """
+        Get Meta data array of key,values lines
+        """
+        return self.md.getMetadata(metaId)
 
     @classmethod
     def _getModuleAndClass(cls):
@@ -966,11 +985,7 @@ class Volume(object):
         """
         Get a value of a specific key
         """
-        meta = self.getMetadata()
-        try:
-            return meta[key]
-        except KeyError:
-            raise se.MetaDataKeyNotFoundError(str(meta) + ":" + str(key))
+        return self.md.getMetaParam(key)
 
     def setMetaParam(self, key, value):
         """
