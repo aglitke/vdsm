@@ -252,6 +252,15 @@ class FileVolumeMetadata(volume.VolumeMetadata):
         """
         self.setMetaParam(volume.IMAGE, imgUUID)
 
+    def removeMetadata(self):
+        """
+        Remove the meta file
+        """
+        metaPath = self._getMetaVolumePath()
+        if self.oop.os.path.lexists(metaPath):
+            self.log.debug("Removing: %s", metaPath)
+            self.oop.os.unlink(metaPath)
+
 
 class FileVolume(volume.Volume):
     """ Actually represents a single volume (i.e. part of virtual disk).
@@ -453,22 +462,9 @@ class FileVolume(volume.Volume):
             if not self.oop.os.access(volPath, os.R_OK):
                 raise se.VolumeAccessError(volPath)
 
-    def removeMetadata(self):
-        """
-        Remove the meta file
-        """
-        metaPath = self._getMetaVolumePath()
-        if self.oop.os.path.lexists(metaPath):
-            self.log.debug("Removing: %s", metaPath)
-            self.oop.os.unlink(metaPath)
-
     @classmethod
     def __putMetadata(cls, metaId, meta):
         FileVolumeMetadata._putMetadata(metaId, meta)
-
-    @classmethod
-    def createMetadata(cls, metaId, meta):
-        cls.__putMetadata(metaId, meta)
 
     @classmethod
     def getImageVolumes(cls, repoPath, sdUUID, imgUUID):
