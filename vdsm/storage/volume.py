@@ -884,6 +884,12 @@ class Volume(object):
     def getSize(self):
         return self.md.getSize()
 
+    def getVolumeSize(self, bs=BLOCK_SIZE):
+        return self.md.getVolumeSize(bs)
+
+    def getVolumeTrueSize(self, bs=BLOCK_SIZE):
+        return self.md.getVolumeTrueSize(bs)
+
     def setSize(self, size):
         self.md.setSize(size)
 
