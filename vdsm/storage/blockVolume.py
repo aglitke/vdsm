@@ -446,7 +446,7 @@ class BlockVolume(volume.Volume):
             self.recheckIfLeaf()
 
         if not force:
-            self.validateDelete()
+            self._md.validateDelete()
 
         # Mark volume as illegal before deleting
         self.setLegality(volume.ILLEGAL_VOL)
