@@ -282,6 +282,16 @@ class BlockVolumeMetadata(volume.VolumeMetadata):
         # tags
         self.setMetaParam(volume.IMAGE, imgUUID)
 
+    def removeMetadata(self, metaId):
+        """
+        Just wipe meta.
+        """
+        try:
+            self._putMetadata(metaId, {"NONE": "#" * (sd.METASIZE - 10)})
+        except Exception as e:
+            self.log.error(e, exc_info=True)
+            raise se.VolumeMetadataWriteError("%s: %s" % (metaId, e))
+
 
 class BlockVolume(volume.Volume):
     """ Actually represents a single volume (i.e. part of virtual disk).
@@ -670,23 +680,9 @@ class BlockVolume(volume.Volume):
         lvs = lvm.lvsByTag(sdUUID, "%s%s" % (TAG_PREFIX_IMAGE, imgUUID))
         return [lv.name for lv in lvs]
 
-    def removeMetadata(self, metaId):
-        """
-        Just wipe meta.
-        """
-        try:
-            self.__putMetadata(metaId, {"NONE": "#" * (sd.METASIZE - 10)})
-        except Exception as e:
-            self.log.error(e, exc_info=True)
-            raise se.VolumeMetadataWriteError("%s: %s" % (metaId, e))
-
     @classmethod
     def __putMetadata(cls, metaId, meta):
         cls.metadataClass._putMetadata(metaId, meta)
-
-    @classmethod
-    def createMetadata(cls, metaId, meta):
-        cls.__putMetadata(metaId, meta)
 
     def getMetaOffset(self):
         return self._md.getMetaOffset()
