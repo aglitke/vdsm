@@ -431,6 +431,24 @@ class VolumeMetadata(object):
     def setFormat(self, volFormat):
         self.setMetaParam(FORMAT, type2name(volFormat))
 
+    def validateDelete(self):
+        """
+        Validate volume before deleting
+        """
+        try:
+            if self.isShared():
+                raise se.CannotDeleteSharedVolume("img %s vol %s" %
+                                                  (self.imgUUID, self.volUUID))
+        except se.MetaDataKeyNotFoundError as e:
+            # In case of metadata key error, we have corrupted
+            # volume (One of metadata corruptions may be
+            # previous volume deletion failure).
+            # So, there is no reasons to avoid its deletion
+            self.log.warn("Volume %s metadata error (%s)",
+                          self.volUUID, str(e))
+        if self.getChildren():
+            raise se.VolumeImageHasChildren(self)
+
 
 class Volume(object):
     log = logging.getLogger('Storage.Volume')
@@ -834,24 +852,6 @@ class Volume(object):
         )
 
         return volUUID
-
-    def validateDelete(self):
-        """
-        Validate volume before deleting
-        """
-        try:
-            if self.isShared():
-                raise se.CannotDeleteSharedVolume("img %s vol %s" %
-                                                  (self.imgUUID, self.volUUID))
-        except se.MetaDataKeyNotFoundError as e:
-            # In case of metadata key error, we have corrupted
-            # volume (One of metadata corruptions may be
-            # previous volume deletion failure).
-            # So, there is no reasons to avoid its deletion
-            self.log.warn("Volume %s metadata error (%s)",
-                          self.volUUID, str(e))
-        if self.getChildren():
-            raise se.VolumeImageHasChildren(self)
 
     def extend(self, newsize):
         """

@@ -356,7 +356,7 @@ class FileVolume(volume.Volume):
         lease_path = self.__leaseVolumePath(vol_path)
 
         if not force:
-            self.validateDelete()
+            self.md.validateDelete()
 
         # Mark volume as illegal before deleting
         self.setLegality(volume.ILLEGAL_VOL)
