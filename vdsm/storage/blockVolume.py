@@ -30,6 +30,7 @@ import storage_exception as se
 import volume
 import image
 import sd
+import blockSD
 import misc
 from misc import logskip
 from misc import deprecated
@@ -194,6 +195,18 @@ class BlockVolumeMetadata(volume.VolumeMetadata):
         Return the underlying device (for sharing)
         """
         return lvm.lvPath(self.sdUUID, self.volUUID)
+
+    def getVolumeSize(self, bs=BLOCK_SIZE):
+        """
+        Return the volume size in blocks
+        """
+        # Just call the SD Manifest method getVSize() - apparently it does what
+        # we need. We consider incurred overhead of producing the object
+        # to be a small price for code de-duplication.
+        manifest = blockSD.BlockStorageDomainManifest(self.sdUUID)
+        return int(manifest.getVSize(self.imgUUID, self.volUUID) / bs)
+
+    getVolumeTrueSize = getVolumeSize
 
     def setMetadata(self, meta, metaId=None):
         """
@@ -693,18 +706,6 @@ class BlockVolume(volume.Volume):
                        * dom.logBlkSize * sd.LEASE_BLOCKS)
 
         sanlock.init_resource(sdUUID, volUUID, [(leasePath, leaseOffset)])
-
-    def getVolumeSize(self, bs=BLOCK_SIZE):
-        """
-        Return the volume size in blocks
-        """
-        # Just call the SD method getVSize() - apparently it does what
-        # we need. We consider incurred overhead of producing the SD object
-        # to be a small price for code de-duplication.
-        sdobj = sdCache.produce(sdUUID=self.sdUUID)
-        return int(sdobj.getVSize(self.imgUUID, self.volUUID) / bs)
-
-    getVolumeTrueSize = getVolumeSize
 
     def _extendSizeRaw(self, newSize):
         # Since this method relies on lvm.extendLV (lvextend) when the

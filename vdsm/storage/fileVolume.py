@@ -189,6 +189,21 @@ class FileVolumeMetadata(volume.VolumeMetadata):
         """
         return self.getVolumePath()
 
+    def getVolumeSize(self, bs=BLOCK_SIZE):
+        """
+        Return the volume size in blocks
+        """
+        volPath = self.getVolumePath()
+        return int(int(self.oop.os.stat(volPath).st_size) / bs)
+
+    def getVolumeTrueSize(self, bs=BLOCK_SIZE):
+        """
+        Return the size of the storage allocated for this volume
+        on underlying storage
+        """
+        volPath = self.getVolumePath()
+        return int(int(self.oop.os.stat(volPath).st_blocks) * BLOCK_SIZE / bs)
+
     def setMetadata(self, meta, metaId=None):
         """
         Set the meta data hash as the new meta data of the Volume
