@@ -279,6 +279,43 @@ class FileVolumeMetadata(volume.VolumeMetadata):
         sanlock.init_resource(sdUUID, volUUID, [(leasePath,
                                                  LEASE_FILEOFFSET)])
 
+    def _getLeaseVolumePath(self, vol_path=None):
+        """
+        Get the volume lease file/link path
+        """
+        if not vol_path:
+            vol_path = self.getVolumePath()
+        return self._leaseVolumePath(vol_path)
+
+    def _shareLease(self, dstImgPath):
+        """
+        Internal utility method used to share the template volume lease file
+        with the images based on such template.
+        """
+        self.log.debug("Share volume lease of %s to %s", self.volUUID,
+                       dstImgPath)
+        dstLeasePath = self._getLeaseVolumePath(
+            os.path.join(dstImgPath, self.volUUID))
+        self.oop.utils.forceLink(self._getLeaseVolumePath(), dstLeasePath)
+
+    def _share(self, dstImgPath):
+        """
+        Share this volume to dstImgPath, including the metadata and the lease
+        """
+        dstVolPath = os.path.join(dstImgPath, self.volUUID)
+        dstMetaPath = self._getMetaVolumePath(dstVolPath)
+
+        self.log.debug("Share volume %s to %s", self.volUUID, dstImgPath)
+        self.oop.utils.forceLink(self.getVolumePath(), dstVolPath)
+
+        self.log.debug("Share volume metadata of %s to %s", self.volUUID,
+                       dstImgPath)
+        self.oop.utils.forceLink(self._getMetaVolumePath(), dstMetaPath)
+
+        # Link the lease file if the domain uses sanlock
+        if sdCache.produce(self.sdUUID).hasVolumeLeases():
+            self._shareLease(dstImgPath)
+
 
 class FileVolume(volume.Volume):
     """ Actually represents a single volume (i.e. part of virtual disk).
@@ -423,35 +460,6 @@ class FileVolume(volume.Volume):
 
         raise eFound
 
-    def _shareLease(self, dstImgPath):
-        """
-        Internal utility method used to share the template volume lease file
-        with the images based on such template.
-        """
-        self.log.debug("Share volume lease of %s to %s", self.volUUID,
-                       dstImgPath)
-        dstLeasePath = self._getLeaseVolumePath(
-            os.path.join(dstImgPath, self.volUUID))
-        self.oop.utils.forceLink(self._getLeaseVolumePath(), dstLeasePath)
-
-    def _share(self, dstImgPath):
-        """
-        Share this volume to dstImgPath, including the metadata and the lease
-        """
-        dstVolPath = os.path.join(dstImgPath, self.volUUID)
-        dstMetaPath = self._getMetaVolumePath(dstVolPath)
-
-        self.log.debug("Share volume %s to %s", self.volUUID, dstImgPath)
-        self.oop.utils.forceLink(self.getVolumePath(), dstVolPath)
-
-        self.log.debug("Share volume metadata of %s to %s", self.volUUID,
-                       dstImgPath)
-        self.oop.utils.forceLink(self._getMetaVolumePath(), dstMetaPath)
-
-        # Link the lease file if the domain uses sanlock
-        if sdCache.produce(self.sdUUID).hasVolumeLeases():
-            self._shareLease(dstImgPath)
-
     @classmethod
     def shareVolumeRollback(cls, taskObj, volPath):
         cls.log.info("Volume rollback for volPath=%s", volPath)
@@ -580,12 +588,7 @@ class FileVolume(volume.Volume):
         return self.md._getMetaVolumePath(vol_path)
 
     def _getLeaseVolumePath(self, vol_path=None):
-        """
-        Get the volume lease file/link path
-        """
-        if not vol_path:
-            vol_path = self.getVolumePath()
-        return self.md._leaseVolumePath(vol_path)
+        return self.md._getLeaseVolumePath(vol_path)
 
     def getVolumeSize(self, bs=BLOCK_SIZE):
         """
