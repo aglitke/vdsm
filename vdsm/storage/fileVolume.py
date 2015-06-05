@@ -262,6 +262,24 @@ class FileVolumeMetadata(volume.VolumeMetadata):
             self.log.debug("Removing: %s", metaPath)
             self.oop.os.unlink(metaPath)
 
+    @classmethod
+    def _leaseVolumePath(cls, vol_path):
+        if vol_path:
+            return vol_path + LEASE_FILEEXT
+        else:
+            return None
+
+    @classmethod
+    def newVolumeLease(cls, metaId, sdUUID, volUUID):
+        cls.log.debug("Initializing volume lease volUUID=%s sdUUID=%s, "
+                      "metaId=%s", volUUID, sdUUID, metaId)
+        volPath, = metaId
+        leasePath = cls._leaseVolumePath(volPath)
+        oop.getProcessPool(sdUUID).truncateFile(leasePath, LEASE_FILEOFFSET)
+        cls.file_setrw(leasePath, rw=True)
+        sanlock.init_resource(sdUUID, volUUID, [(leasePath,
+                                                 LEASE_FILEOFFSET)])
+
 
 class FileVolume(volume.Volume):
     """ Actually represents a single volume (i.e. part of virtual disk).
@@ -369,7 +387,7 @@ class FileVolume(volume.Volume):
         self.log.info("Request to delete volume %s", self.volUUID)
 
         vol_path = self.getVolumePath()
-        lease_path = self.__leaseVolumePath(vol_path)
+        lease_path = self._md._leaseVolumePath(vol_path)
 
         if not force:
             self._md.validateDelete()
@@ -447,7 +465,7 @@ class FileVolume(volume.Volume):
         procPool = oop.getProcessPool(getDomUuidFromVolumePath(volPath))
         procPool.utils.rmFile(volPath)
         procPool.utils.rmFile(cls.metadataClass._metaVolumePath(volPath))
-        procPool.utils.rmFile(cls.__leaseVolumePath(volPath))
+        procPool.utils.rmFile(cls.metadataClass._leaseVolumePath(volPath))
 
     def llPrepare(self, rw=False, setrw=False):
         """
@@ -491,17 +509,6 @@ class FileVolume(volume.Volume):
                     getImage() == imgUUID):
                 volList.append(volid)
         return volList
-
-    @classmethod
-    def newVolumeLease(cls, metaId, sdUUID, volUUID):
-        cls.log.debug("Initializing volume lease volUUID=%s sdUUID=%s, "
-                      "metaId=%s", volUUID, sdUUID, metaId)
-        volPath, = metaId
-        leasePath = cls.__leaseVolumePath(volPath)
-        oop.getProcessPool(sdUUID).truncateFile(leasePath, LEASE_FILEOFFSET)
-        cls.file_setrw(leasePath, rw=True)
-        sanlock.init_resource(sdUUID, volUUID, [(leasePath,
-                                                 LEASE_FILEOFFSET)])
 
     def setParentMeta(self, puuid):
         """
@@ -572,13 +579,6 @@ class FileVolume(volume.Volume):
         self._md.volUUID = newUUID
         self._md.volumePath = volPath
 
-    @classmethod
-    def __leaseVolumePath(cls, vol_path):
-        if vol_path:
-            return vol_path + LEASE_FILEEXT
-        else:
-            return None
-
     def _getMetaVolumePath(self, vol_path=None):
         return self._md._getMetaVolumePath(vol_path)
 
@@ -588,7 +588,7 @@ class FileVolume(volume.Volume):
         """
         if not vol_path:
             vol_path = self.getVolumePath()
-        return self.__leaseVolumePath(vol_path)
+        return self._md._leaseVolumePath(vol_path)
 
     def getVolumeSize(self, bs=BLOCK_SIZE):
         """
