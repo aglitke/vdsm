@@ -1164,3 +1164,7 @@ class Volume(object):
     @classmethod
     def createMetadata(cls, metaId, meta):
         return cls.MetadataClass.createMetadata(metaId, meta)
+
+    @classmethod
+    def newVolumeLease(cls, metaId, sdUUID, volUUID):
+        return cls.MetadataClass.newVolumeLease(metaId, sdUUID, volUUID)
