@@ -87,6 +87,17 @@ def _deleteImage(dom, imgUUID, postZero):
         dom.deleteImage(dom.sdUUID, imgUUID, imgVols)
 
 
+class ImageManifest(object):
+    def __init__(self, repoPath):
+        self.repoPath = repoPath
+
+    def getImageDir(self, sdUUID, imgUUID):
+        """
+        Return image directory
+        """
+        return os.path.join(self.repoPath, sdUUID, sd.DOMAIN_IMAGES, imgUUID)
+
+
 class Image:
     """ Actually represents a whole virtual disk.
         Consist from chain of volumes.
@@ -108,7 +119,11 @@ class Image:
                               "folder %s" % (imageDir))
 
     def __init__(self, repoPath):
-        self.repoPath = repoPath
+        self.manifest = ImageManifest(repoPath)
+
+    @property
+    def repoPath(self):
+        return self.manifest.repoPath
 
     def create(self, sdUUID, imgUUID):
         """Create placeholder for image's volumes
@@ -128,10 +143,7 @@ class Image:
         return imageDir
 
     def getImageDir(self, sdUUID, imgUUID):
-        """
-        Return image directory
-        """
-        return os.path.join(self.repoPath, sdUUID, sd.DOMAIN_IMAGES, imgUUID)
+        return self.manifest.getImageDir(sdUUID, imgUUID)
 
     def deletedVolumeName(self, uuid):
         """
