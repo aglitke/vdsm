@@ -1426,5 +1426,10 @@ def findDomain(sdUUID):
     return BlockStorageDomain(BlockStorageDomain.findDomainPath(sdUUID))
 
 
+def findDomainManifest(sdUUID, metadata=None):
+    return BlockStorageDomainManifest(
+        BlockStorageDomain.findDomainPath(sdUUID), metadata)
+
+
 def getStorageDomainsList():
     return [vg.name for vg in lvm.getAllVGs() if _isSD(vg)]

@@ -119,3 +119,8 @@ class LocalFsStorageDomain(fileSD.FileStorageDomain):
 
 def findDomain(sdUUID):
     return LocalFsStorageDomain(LocalFsStorageDomain.findDomainPath(sdUUID))
+
+
+def findDomainManifest(sdUUID, metadata=None):
+    return fileSD.FileStorageDomainManifest(
+        LocalFsStorageDomain.findDomainPath(sdUUID), metadata)

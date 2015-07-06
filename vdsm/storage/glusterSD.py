@@ -30,3 +30,8 @@ class GlusterStorageDomain(nfsSD.NfsStorageDomain):
 
 def findDomain(sdUUID):
     return GlusterStorageDomain(GlusterStorageDomain.findDomainPath(sdUUID))
+
+
+def findDomainManifest(sdUUID, metadata=None):
+    return fileSD.FileStorageDomainManifest(
+        GlusterStorageDomain.findDomainPath(sdUUID), metadata)
