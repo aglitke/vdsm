@@ -120,3 +120,8 @@ class NfsStorageDomain(fileSD.FileStorageDomain):
 
 def findDomain(sdUUID):
     return NfsStorageDomain(NfsStorageDomain.findDomainPath(sdUUID))
+
+
+def findDomainManifest(sdUUID, metadata=None):
+    return fileSD.FileStorageDomainManifest(
+        NfsStorageDomain.findDomainPath(sdUUID), metadata)
