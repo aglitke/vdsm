@@ -118,7 +118,7 @@ def v3DomainConverter(repoPath, hostId, domain, isMsd):
         domain.setMetadataPermissions()
 
     log.debug("Initializing the new cluster lock for domain %s", domain.sdUUID)
-    newClusterLock = domain._makeClusterLock(targetVersion)
+    newClusterLock = domain._makeDomainLock(targetVersion)
     newClusterLock.initLock()
 
     log.debug("Acquiring the host id %s for domain %s", hostId, domain.sdUUID)
