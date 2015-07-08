@@ -38,6 +38,7 @@ import task
 from threadLocal import vars
 import resourceFactories
 import resourceManager as rm
+from sdmprotect import require_sdm
 
 log = logging.getLogger('Storage.Image')
 rmanager = rm.ResourceManager.getInstance()
@@ -96,6 +97,14 @@ class ImageManifest(object):
         Return image directory
         """
         return os.path.join(self.repoPath, sdUUID, sd.DOMAIN_IMAGES, imgUUID)
+
+    @require_sdm
+    def create_image_dir(self, sd_id, img_id):
+        img_dir = self.getImageDir(sd_id, img_id)
+        if not os.path.isdir(img_dir):
+            log.info("Create placeholder %s for image's volumes", img_dir)
+            os.mkdir(img_dir)
+        return img_dir
 
 
 class Image:
