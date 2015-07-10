@@ -934,6 +934,7 @@ exit 0
 %{_datadir}/%{vdsm_name}/storage/clusterlock.py*
 %{_datadir}/%{vdsm_name}/storage/sdc.py*
 %{_datadir}/%{vdsm_name}/storage/sd.py*
+%{_datadir}/%{vdsm_name}/storage/sdmprotect.py*
 %{_datadir}/%{vdsm_name}/storage/securable.py*
 %{_datadir}/%{vdsm_name}/storage/sp.py*
 %{_datadir}/%{vdsm_name}/storage/spbackends.py*
