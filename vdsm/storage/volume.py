@@ -524,7 +524,15 @@ class VolumeMetadata(object):
     @classmethod
     def newMetadata(cls, metaId, sdUUID, imgUUID, puuid, size, format, type,
                     voltype, disktype, desc="", legality=ILLEGAL_VOL):
-        meta = {
+        meta = cls.makeMetadata(sdUUID, imgUUID, puuid, size, format, type,
+                                voltype, disktype, desc, legality)
+        cls.createMetadata(metaId, meta)
+        return meta
+
+    @classmethod
+    def makeMetadata(cls, sdUUID, imgUUID, puuid, size, format, type, voltype,
+                     disktype, desc="", legality=ILLEGAL_VOL):
+        return {
             FORMAT: str(format),
             TYPE: str(type),
             VOLTYPE: str(voltype),
@@ -539,7 +547,6 @@ class VolumeMetadata(object):
             MTIME: 0,
             LEGALITY: str(legality),
             }
-        cls.createMetadata(metaId, meta)
         return meta
 
     def refreshVolume(self):

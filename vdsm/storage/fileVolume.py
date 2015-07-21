@@ -235,9 +235,11 @@ class FileVolumeMetadata(volume.VolumeMetadata):
         self.file_setrw(self.getVolumePath(), rw=rw)
 
     @classmethod
-    def _putMetadata(cls, metaId, meta):
+    def _putMetadata(cls, metaId, meta, gcSuffix=None):
         volPath, = metaId
-        metaPath = cls.metadataClass._metaVolumePath(volPath)
+        metaPath = cls._metaVolumePath(volPath)
+        if gcSuffix:
+            metaPath += gcSuffix
 
         data = cls.formatMetadata(meta)
 
