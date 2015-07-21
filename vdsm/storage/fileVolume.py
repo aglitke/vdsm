@@ -300,7 +300,7 @@ class FileVolumeMetadata(volume.VolumeMetadata):
             os.path.join(dstImgPath, self.volUUID))
         self.oop.utils.forceLink(self._getLeaseVolumePath(), dstLeasePath)
 
-    def _share(self, dstImgPath):
+    def share_to_image(self, dstImgPath):
         """
         Share this volume to dstImgPath, including the metadata and the lease
         """

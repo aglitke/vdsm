@@ -598,7 +598,7 @@ class Volume(object):
         self.md.removeMetadata()
 
     def _share(self, dstImgPath):
-        return self.md._share(dstImgPath)
+        return self.md.share_to_image(dstImgPath)
 
     @classmethod
     def _getModuleAndClass(cls):

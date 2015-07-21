@@ -314,7 +314,7 @@ class BlockVolumeMetadata(volume.VolumeMetadata):
     def refreshVolume(self):
         lvm.refreshLVs(self.sdUUID, (self.volUUID,))
 
-    def _share(self, dstImgPath):
+    def share_to_image(self, dstImgPath):
         """
         Share this volume to dstImgPath
         """
