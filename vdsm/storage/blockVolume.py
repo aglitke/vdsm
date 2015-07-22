@@ -316,6 +316,15 @@ class BlockVolumeMetadata(volume.VolumeMetadata):
         self.log.debug("Share volume %s to %s", self.volUUID, dstImgPath)
         os.symlink(self.getDevPath(), dstPath)
 
+    @classmethod
+    def getImageVolumes(cls, repoPath, sdUUID, imgUUID):
+        """
+        Fetch the list of the Volumes UUIDs, not including the shared base
+        (template)
+        """
+        lvs = lvm.lvsByTag(sdUUID, "%s%s" % (TAG_PREFIX_IMAGE, imgUUID))
+        return [lv.name for lv in lvs]
+
 
 class BlockVolume(volume.Volume):
     """ Actually represents a single volume (i.e. part of virtual disk).
@@ -688,12 +697,7 @@ class BlockVolume(volume.Volume):
 
     @classmethod
     def getImageVolumes(cls, repoPath, sdUUID, imgUUID):
-        """
-        Fetch the list of the Volumes UUIDs, not including the shared base
-        (template)
-        """
-        lvs = lvm.lvsByTag(sdUUID, "%s%s" % (TAG_PREFIX_IMAGE, imgUUID))
-        return [lv.name for lv in lvs]
+        return BlockVolumeMetadata.getImageVolumes(repoPath, sdUUID, imgUUID)
 
     @classmethod
     def __putMetadata(cls, metaId, meta):
