@@ -552,6 +552,16 @@ class VolumeMetadata(object):
         """
         pass  # Do not remove this method or the V3 upgrade will fail.
 
+    def getParentVolume(self):
+        """
+        Return parent volume object
+        """
+        puuid = self.getParent()
+        if puuid and puuid != BLANK_UUID:
+            return sdCache.produce(self.sdUUID).produceVolume(self.imgUUID,
+                                                              puuid)
+        return None
+
 
 class Volume(object):
     log = logging.getLogger('Storage.Volume')
@@ -1213,11 +1223,7 @@ class Volume(object):
         """
         Return parent volume object
         """
-        puuid = self.getParent()
-        if puuid and puuid != BLANK_UUID:
-            return sdCache.produce(self.sdUUID).produceVolume(self.imgUUID,
-                                                              puuid)
-        return None
+        return self._md.getParentVolume()
 
     def setParent(self, puuid):
         """
