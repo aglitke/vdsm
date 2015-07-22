@@ -316,6 +316,25 @@ class FileVolumeMetadata(volume.VolumeMetadata):
         if sdCache.produce(self.sdUUID).hasVolumeLeases():
             self._shareLease(dstImgPath)
 
+    @classmethod
+    def getImageVolumes(cls, repoPath, sdUUID, imgUUID):
+        """
+        Fetch the list of the Volumes UUIDs,
+        not including the shared base (template)
+        """
+        # Get Volumes of an image
+        pattern = os.path.join(repoPath, sdUUID, sd.DOMAIN_IMAGES,
+                               imgUUID, "*.meta")
+        files = oop.getProcessPool(sdUUID).glob.glob(pattern)
+        volList = []
+        for i in files:
+            volid = os.path.splitext(os.path.basename(i))[0]
+            if (sdCache.produce(sdUUID).
+                    produceVolume(imgUUID, volid).
+                    getImage() == imgUUID):
+                volList.append(volid)
+        return volList
+
 
 class FileVolume(volume.Volume):
     """ Actually represents a single volume (i.e. part of virtual disk).
@@ -494,22 +513,7 @@ class FileVolume(volume.Volume):
 
     @classmethod
     def getImageVolumes(cls, repoPath, sdUUID, imgUUID):
-        """
-        Fetch the list of the Volumes UUIDs,
-        not including the shared base (template)
-        """
-        # Get Volumes of an image
-        pattern = os.path.join(repoPath, sdUUID, sd.DOMAIN_IMAGES,
-                               imgUUID, "*.meta")
-        files = oop.getProcessPool(sdUUID).glob.glob(pattern)
-        volList = []
-        for i in files:
-            volid = os.path.splitext(os.path.basename(i))[0]
-            if (sdCache.produce(sdUUID).
-                    produceVolume(imgUUID, volid).
-                    getImage() == imgUUID):
-                volList.append(volid)
-        return volList
+        return cls.MetadataClass.getImageVolumes(repoPath, sdUUID, imgUUID)
 
     def setParentMeta(self, puuid):
         """
