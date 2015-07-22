@@ -89,6 +89,8 @@ def _deleteImage(dom, imgUUID, postZero):
 
 
 class ImageManifest(object):
+    log = logging.getLogger('Storage.ImageManifest')
+
     def __init__(self, repoPath):
         self._repoPath = repoPath
 
@@ -109,6 +111,74 @@ class ImageManifest(object):
             log.info("Create placeholder %s for image's volumes", img_dir)
             os.mkdir(img_dir)
         return img_dir
+
+    def getChain(self, sdUUID, imgUUID, volUUID=None):
+        """
+        Return the chain of volumes of image as a sorted list
+        (not including a shared base (template) if any)
+        """
+        chain = []
+        volclass = sdCache.produce(sdUUID).getVolumeClass()
+
+        # Use volUUID when provided
+        if volUUID:
+            srcVol = volclass(self.repoPath, sdUUID, imgUUID, volUUID)
+
+            # For template images include only one volume (the template itself)
+            # NOTE: this relies on the fact that in a template there is only
+            #       one volume
+            if srcVol.isShared():
+                return [srcVol]
+
+        # Find all the volumes when volUUID is not provided
+        else:
+            # Find all volumes of image
+            uuidlist = volclass.getImageVolumes(self.repoPath, sdUUID, imgUUID)
+
+            if not uuidlist:
+                raise se.ImageDoesNotExistInSD(imgUUID, sdUUID)
+
+            srcVol = volclass(self.repoPath, sdUUID, imgUUID, uuidlist[0])
+
+            # For template images include only one volume (the template itself)
+            if len(uuidlist) == 1 and srcVol.isShared():
+                return [srcVol]
+
+            # Searching for the leaf
+            for vol in uuidlist:
+                srcVol = volclass(self.repoPath, sdUUID, imgUUID, vol)
+
+                if srcVol.isLeaf():
+                    break
+
+                srcVol = None
+
+            if not srcVol:
+                self.log.error("There is no leaf in the image %s", imgUUID)
+                raise se.ImageIsNotLegalChain(imgUUID)
+
+        # We have seen corrupted chains that cause endless loops here.
+        # https://bugzilla.redhat.com/1125197
+        seen = set()
+
+        # Build up the sorted parent -> child chain
+        while not srcVol.isShared():
+            chain.insert(0, srcVol)
+            seen.add(srcVol.volUUID)
+
+            parentUUID = srcVol.getParentId()
+            if parentUUID == volume.BLANK_UUID:
+                break
+
+            if parentUUID in seen:
+                self.log.error("Image %s volume %s has invalid parent UUID %s",
+                               imgUUID, srcVol.volUUID, parentUUID)
+                raise se.ImageIsNotLegalChain(imgUUID)
+
+            srcVol = srcVol.produceParent()
+
+        self.log.info("sdUUID=%s imgUUID=%s chain=%s ", sdUUID, imgUUID, chain)
+        return chain
 
 
 class Image:
@@ -195,72 +265,7 @@ class Image:
         return newsize
 
     def getChain(self, sdUUID, imgUUID, volUUID=None):
-        """
-        Return the chain of volumes of image as a sorted list
-        (not including a shared base (template) if any)
-        """
-        chain = []
-        volclass = sdCache.produce(sdUUID).getVolumeClass()
-
-        # Use volUUID when provided
-        if volUUID:
-            srcVol = volclass(self.repoPath, sdUUID, imgUUID, volUUID)
-
-            # For template images include only one volume (the template itself)
-            # NOTE: this relies on the fact that in a template there is only
-            #       one volume
-            if srcVol.isShared():
-                return [srcVol]
-
-        # Find all the volumes when volUUID is not provided
-        else:
-            # Find all volumes of image
-            uuidlist = volclass.getImageVolumes(self.repoPath, sdUUID, imgUUID)
-
-            if not uuidlist:
-                raise se.ImageDoesNotExistInSD(imgUUID, sdUUID)
-
-            srcVol = volclass(self.repoPath, sdUUID, imgUUID, uuidlist[0])
-
-            # For template images include only one volume (the template itself)
-            if len(uuidlist) == 1 and srcVol.isShared():
-                return [srcVol]
-
-            # Searching for the leaf
-            for vol in uuidlist:
-                srcVol = volclass(self.repoPath, sdUUID, imgUUID, vol)
-
-                if srcVol.isLeaf():
-                    break
-
-                srcVol = None
-
-            if not srcVol:
-                self.log.error("There is no leaf in the image %s", imgUUID)
-                raise se.ImageIsNotLegalChain(imgUUID)
-
-        # We have seen corrupted chains that cause endless loops here.
-        # https://bugzilla.redhat.com/1125197
-        seen = set()
-
-        # Build up the sorted parent -> child chain
-        while not srcVol.isShared():
-            chain.insert(0, srcVol)
-            seen.add(srcVol.volUUID)
-
-            parentUUID = srcVol.getParentId()
-            if parentUUID == volume.BLANK_UUID:
-                break
-
-            if parentUUID in seen:
-                self.log.error("Image %s volume %s has invalid parent UUID %s",
-                               imgUUID, srcVol.volUUID, parentUUID)
-                raise se.ImageIsNotLegalChain(imgUUID)
-
-            srcVol = srcVol.produceParent()
-
-        self.log.info("sdUUID=%s imgUUID=%s chain=%s ", sdUUID, imgUUID, chain)
-        return chain
+        return self.manifest.getChain(sdUUID, imgUUID, volUUID)
 
     def getTemplate(self, sdUUID, imgUUID):
         """
