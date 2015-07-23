@@ -64,12 +64,13 @@ class StorageDomainCache:
     STORAGE_STALE = 1
     STORAGE_REFRESHING = 2
 
-    def __init__(self, storage_repo):
+    def __init__(self, storage_repo, use_manifests=False):
         self._syncroot = threading.Condition()
         self.__domainCache = {}
         self.__inProgress = set()
         self.__staleStatus = self.STORAGE_STALE
         self.storage_repo = storage_repo
+        self.use_manifests = use_manifests
         self.knownSDs = {}  # {sdUUID: mod.findDomain}
 
     def invalidateStorage(self):
@@ -162,12 +163,18 @@ class StorageDomainCache:
         # this changes, please update the order.
         for mod in (blockSD, glusterSD, localFsSD, nfsSD):
             try:
-                return mod.findDomain(sdUUID)
+                if self.use_manifests:
+                    ret = mod.findDomainManifest(sdUUID)
+                else:
+                    ret = mod.findDomain(sdUUID)
             except se.StorageDomainDoesNotExist:
                 pass
             except Exception:
                 self.log.error("Error while looking for domain `%s`", sdUUID,
                                exc_info=True)
+            else:
+                self.log.debug("Found domain %s", ret)
+                return ret
 
         raise se.StorageDomainDoesNotExist(sdUUID)
 
@@ -181,10 +188,12 @@ class StorageDomainCache:
 
         return uuids
 
-    def refresh(self):
+    def refresh(self, use_manifests=None):
         with self._syncroot:
             lvm.invalidateCache()
             self.__domainCache.clear()
+            if use_manifests is not None:
+                self.use_manifests = use_manifests
 
     def manuallyAddDomain(self, domain):
         with self._syncroot:
