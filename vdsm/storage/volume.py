@@ -250,7 +250,7 @@ class VolumeMetadata(object):
             "disktype": meta.get(DISKTYPE, ""),
             "voltype": meta.get(VOLTYPE, ""),
             "size": int(meta.get(SIZE, "0")),
-            "parent": self.getParent(),
+            "parent": self.getParentId(),
             "description": meta.get(DESCRIPTION, ""),
             "pool": meta.get(sd.DMDK_POOLS, ""),
             "domain": meta.get(DOMAIN, ""),
@@ -310,7 +310,7 @@ class VolumeMetadata(object):
         volParams['size'] = self.getSize()
         volParams['apparentsize'] = self.getVolumeSize(bs=bs)
         volParams['truesize'] = self.getVolumeTrueSize(bs=bs)
-        volParams['parent'] = self.getParent()
+        volParams['parent'] = self.getParentId()
         volParams['descr'] = self.getDescription()
         volParams['legality'] = self.getLegality()
         return volParams
@@ -494,7 +494,7 @@ class VolumeMetadata(object):
         """
         Return parent volume object
         """
-        puuid = self.getParent()
+        puuid = self.getParentId()
         if puuid and puuid != BLANK_UUID:
             return sdCache.produce(self.sdUUID).produceVolume(self.imgUUID,
                                                               puuid)
@@ -571,11 +571,11 @@ class Volume(object):
         """
         return self.md.getMetadata(metaId)
 
-    def getParent(self):
+    def getParentId(self):
         """
         Return parent volume UUID
         """
-        return self.md.getParent()
+        return self.md.getParentId()
 
     def getChildren(self):
         """ Return children volume UUIDs.

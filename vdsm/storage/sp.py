@@ -1838,7 +1838,7 @@ class StoragePool(object):
                                           volUUID=srcVolUUID)
 
             if not srcVol.isShared():
-                if srcVol.getParent() == volume.BLANK_UUID:
+                if srcVol.getParentId() == volume.BLANK_UUID:
                     with rmanager.acquireResource(imageResourcesNamespace,
                                                   srcImgUUID,
                                                   rm.LockType.exclusive):

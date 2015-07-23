@@ -150,7 +150,7 @@ class FileVolumeMetadata(volume.VolumeMetadata):
 
         return out
 
-    def getParent(self):
+    def getParentId(self):
         """
         Return parent volume UUID
         """
@@ -452,7 +452,7 @@ class FileVolume(volume.Volume):
         try:
             # We need to blank parent record in our metadata
             # for parent to become leaf successfully.
-            puuid = self.getParent()
+            puuid = self.getParentId()
             self.setParent(volume.BLANK_UUID)
             if puuid and puuid != volume.BLANK_UUID:
                 pvol = FileVolume(self.repoPath, self.sdUUID,

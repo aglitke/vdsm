@@ -232,7 +232,7 @@ class Image:
             chain.insert(0, srcVol)
             seen.add(srcVol.volUUID)
 
-            parentUUID = srcVol.getParent()
+            parentUUID = srcVol.getParentId()
             if parentUUID == volume.BLANK_UUID:
                 break
 
@@ -578,7 +578,7 @@ class Image:
             raise se.VolumeNotSparse()
 
         srcVolume = self._getSparsifyVolume(tmpSdUUID, tmpImgUUID,
-                                            tmpVolume.getParent())
+                                            tmpVolume.getParentId())
 
         tmpVolume.prepare()
         try:
@@ -898,7 +898,7 @@ class Image:
         successor = chain[-1]
         tmpVol = volclass(self.repoPath, sdDom.sdUUID, imgUUID, successor)
         dstParent = volclass(self.repoPath, sdDom.sdUUID, imgUUID,
-                             ancestor).getParent()
+                             ancestor).getParentId()
 
         # Mark all volumes as illegal
         while tmpVol and dstParent != tmpVol.volUUID:
@@ -926,7 +926,7 @@ class Image:
         successor = chain[-1]
         srcVol = volclass(self.repoPath, sdUUID, imgUUID, successor)
         dstParent = volclass(self.repoPath, sdUUID, imgUUID,
-                             ancestor).getParent()
+                             ancestor).getParentId()
 
         while srcVol and dstParent != srcVol.volUUID:
             try:
@@ -953,7 +953,7 @@ class Image:
         successor = chain[-1]
         srcVol = volclass(self.repoPath, sdDom.sdUUID, imgUUID, successor)
         dstParent = volclass(self.repoPath, sdDom.sdUUID, imgUUID,
-                             ancestor).getParent()
+                             ancestor).getParentId()
 
         while srcVol and dstParent != srcVol.volUUID:
             self.log.info("Remove volume %s from image %s", srcVol.volUUID,
@@ -1143,12 +1143,12 @@ class Image:
         """
         chain = []
         accumulatedChainSize = 0
-        endVolName = vols[ancestor].getParent()  # TemplateVolName or None
+        endVolName = vols[ancestor].getParentId()  # TemplateVolName or None
         currVolName = successor
         while (currVolName != endVolName):
             chain.insert(0, currVolName)
             accumulatedChainSize += vols[currVolName].getVolumeSize()
-            currVolName = vols[currVolName].getParent()
+            currVolName = vols[currVolName].getParentId()
 
         return accumulatedChainSize, chain
 
@@ -1169,7 +1169,7 @@ class Image:
         self.log.debug("unlinking subchain: %s" % subChain)
 
         sdDom = sdCache.produce(sdUUID=sdUUID)
-        dstParent = sdDom.produceVolume(imgUUID, subChain[0]).getParent()
+        dstParent = sdDom.produceVolume(imgUUID, subChain[0]).getParentId()
         subChainTailVol = sdDom.produceVolume(imgUUID, subChain[-1])
         if subChainTailVol.isLeaf():
             self.log.debug("Leaf volume is being removed from the chain. "
@@ -1247,10 +1247,10 @@ class Image:
         srcVolParams = srcVol.getVolumeParams()
         srcVolParams['children'] = []
         for vName, vol in vols.iteritems():
-            if vol.getParent() == successor:
+            if vol.getParentId() == successor:
                 srcVolParams['children'].append(vol)
         dstVol = vols[ancestor]
-        dstParentUUID = dstVol.getParent()
+        dstParentUUID = dstVol.getParentId()
         if dstParentUUID != sd.BLANK_UUID:
             volParams = vols[dstParentUUID].getVolumeParams()
         else:
