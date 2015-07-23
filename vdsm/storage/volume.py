@@ -490,7 +490,7 @@ class VolumeMetadata(object):
         """
         pass  # Do not remove this method or the V3 upgrade will fail.
 
-    def getParentVolume(self):
+    def produceParent(self):
         """
         Return parent volume object
         """
@@ -659,7 +659,7 @@ class Volume(object):
         Rebase volume on top of new backing volume
         """
         if rollback:
-            pvol = self.getParentVolume()
+            pvol = self.produceParent()
             if not pvol:
                 self.log.warn("Can't rebase volume %s, parent missing",
                               self.volUUID)
@@ -787,7 +787,7 @@ class Volume(object):
                      "volUUID=%s imageDir=%s" %
                      (repoPath, sdUUID, imgUUID, volUUID, imageDir))
         vol = sdCache.produce(sdUUID).produceVolume(imgUUID, volUUID)
-        pvol = vol.getParentVolume()
+        pvol = vol.produceParent()
         # Remove volume
         vol.delete(postZero=False, force=True)
         if len(cls.getImageVolumes(repoPath, sdUUID, imgUUID)):
@@ -1120,7 +1120,7 @@ class Volume(object):
         try:
             if justme:
                 return True
-            pvol = self.getParentVolume()
+            pvol = self.produceParent()
             if pvol:
                 pvol.prepare(rw=chainrw, justme=False,
                              chainrw=chainrw, setrw=setrw)
@@ -1149,7 +1149,7 @@ class Volume(object):
     def getInfo(self):
         return self.md.getInfo()
 
-    def getParentVolume(self):
+    def produceParent(self):
         """
         Return parent volume object
         """

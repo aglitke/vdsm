@@ -168,7 +168,7 @@ class Image:
         """
         chain = self.getChain(sdUUID, imgUUID, volUUID)
         newsize = 0
-        template = chain[0].getParentVolume()
+        template = chain[0].produceParent()
         if template:
             newsize = template.getVolumeSize()
         for vol in chain:
@@ -241,7 +241,7 @@ class Image:
                                imgUUID, srcVol.volUUID, parentUUID)
                 raise se.ImageIsNotLegalChain(imgUUID)
 
-            srcVol = srcVol.getParentVolume()
+            srcVol = srcVol.produceParent()
 
         self.log.info("sdUUID=%s imgUUID=%s chain=%s ", sdUUID, imgUUID, chain)
         return chain
@@ -254,7 +254,7 @@ class Image:
         # Find all volumes of image (excluding template)
         chain = self.getChain(sdUUID, imgUUID)
         # check if the chain is build above a template, or it is a standalone
-        pvol = chain[0].getParentVolume()
+        pvol = chain[0].produceParent()
         if pvol:
             tmpl = pvol
         elif chain[0].isShared():
@@ -351,7 +351,7 @@ class Image:
         fakeTemplate = False
         pimg = volume.BLANK_UUID    # standalone chain
         # check if the chain is build above a template, or it is a standalone
-        pvol = srcChain[0].getParentVolume()
+        pvol = srcChain[0].produceParent()
         if pvol:
             # find out parent volume parameters
             volParams = pvol.getVolumeParams()
@@ -454,7 +454,7 @@ class Image:
                     srcFormat = volume.fmt2str(srcVol.getFormat())
                     dstFormat = volume.fmt2str(dstVol.getFormat())
 
-                    parentVol = dstVol.getParentVolume()
+                    parentVol = dstVol.produceParent()
 
                     if parentVol is not None:
                         backing = volume.getBackingVolumePath(
@@ -731,7 +731,7 @@ class Image:
             raise se.ImageIsNotLegalChain(imgUUID)
         chain = self.getChain(sdUUID, imgUUID)
         # check if the chain is build above a template, or it is a standalone
-        pvol = chain[0].getParentVolume()
+        pvol = chain[0].produceParent()
         if pvol:
             if not pvol.isLegal() or pvol.isFake():
                 raise se.ImageIsNotLegalChain(imgUUID)
@@ -902,7 +902,7 @@ class Image:
 
         # Mark all volumes as illegal
         while tmpVol and dstParent != tmpVol.volUUID:
-            vol = tmpVol.getParentVolume()
+            vol = tmpVol.produceParent()
             tmpVol.setLegality(volume.ILLEGAL_VOL)
             tmpVol = vol
 
@@ -932,7 +932,7 @@ class Image:
             try:
                 self.log.info("Teardown volume %s from image %s",
                               srcVol.volUUID, imgUUID)
-                vol = srcVol.getParentVolume()
+                vol = srcVol.produceParent()
                 srcVol.teardown(sdUUID=srcVol.sdUUID, volUUID=srcVol.volUUID,
                                 justme=True)
                 srcVol = vol
@@ -958,7 +958,7 @@ class Image:
         while srcVol and dstParent != srcVol.volUUID:
             self.log.info("Remove volume %s from image %s", srcVol.volUUID,
                           imgUUID)
-            vol = srcVol.getParentVolume()
+            vol = srcVol.produceParent()
             srcVol.delete(postZero=postZero, force=True)
             chain.remove(srcVol.volUUID)
             srcVol = vol
@@ -1321,7 +1321,7 @@ class Image:
 
     def _activateVolumeForImportExport(self, domain, imgUUID, volUUID=None):
         chain = self.getChain(domain.sdUUID, imgUUID, volUUID)
-        template = chain[0].getParentVolume()
+        template = chain[0].produceParent()
 
         if template or len(chain) > 1:
             self.log.error("Importing and exporting an image with more "

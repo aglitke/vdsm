@@ -126,7 +126,7 @@ class ImageResourceFactory(rm.SimpleResourceFactory):
             return []
 
         # check if the chain is build above a template, or it is a standalone
-        pvol = chain[0].getParentVolume()
+        pvol = chain[0].produceParent()
         if pvol:
             template = pvol.volUUID
         elif chain[0].isShared():
