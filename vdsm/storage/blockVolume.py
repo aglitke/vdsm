@@ -168,7 +168,7 @@ class BlockVolumeMetadata(volume.VolumeMetadata):
     def getParentMeta(self):
         return self.getMetaParam(volume.PUUID)
 
-    def getParent(self):
+    def getParentId(self):
         """
         Return parent volume UUID
         """
@@ -514,7 +514,7 @@ class BlockVolume(volume.Volume):
         try:
             # We need to blank parent record in our metadata
             # for parent to become leaf successfully.
-            puuid = self.getParent()
+            puuid = self.getParentId()
             self.setParent(volume.BLANK_UUID)
             if puuid and puuid != volume.BLANK_UUID:
                 pvol = BlockVolume(self.repoPath, self.sdUUID, self.imgUUID,
