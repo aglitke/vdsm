@@ -74,6 +74,8 @@ class BlockVolumeMetadata(volume.VolumeMetadata):
         volume.VolumeMetadata.__init__(self, repoPath, sdUUID, imgUUID,
                                        volUUID)
         self.metaoff = None
+        self.lvmActivationNamespace = sd.getNamespace(self.sdUUID,
+                                                      LVM_ACTIVATION_NAMESPACE)
 
     def getMetadataId(self):
         """
@@ -332,6 +334,49 @@ class BlockVolumeMetadata(volume.VolumeMetadata):
         lvs = lvm.lvsByTag(sdUUID, "%s%s" % (TAG_PREFIX_IMAGE, imgUUID))
         return [lv.name for lv in lvs]
 
+    @logskip("ResourceManager")
+    def llPrepare(self, rw=False, setrw=False):
+        """
+        Perform low level volume use preparation
+
+        For the Block Volumes the actual LV activation is wrapped
+        into lvmActivation resource. It is being initialized by the
+        storage domain sitting on top of the encapsulating VG.
+        We just use it here.
+        """
+        if setrw:
+            self.setrw(rw=rw)
+        access = rm.LockType.exclusive if rw else rm.LockType.shared
+        activation = rmanager.acquireResource(self.lvmActivationNamespace,
+                                              self.volUUID, access)
+        activation.autoRelease = False
+
+    @classmethod
+    def teardown(cls, sdUUID, volUUID, justme=False):
+        """
+        Deactivate volume and release resources.
+        Volume deactivation occurs as part of resource releasing.
+        If justme is false, the entire COW chain should be torn down.
+        """
+        cls.log.info("Tearing down volume %s/%s justme %s"
+                     % (sdUUID, volUUID, justme))
+        lvmActivationNamespace = sd.getNamespace(sdUUID,
+                                                 LVM_ACTIVATION_NAMESPACE)
+        rmanager.releaseResource(lvmActivationNamespace, volUUID)
+        if not justme:
+            try:
+                pvolUUID = _getVolumeTag(sdUUID, volUUID, TAG_PREFIX_PARENT)
+            except Exception as e:
+                # If storage not accessible or lvm error occurred
+                # we will failure to get the parent volume.
+                # We can live with it and still succeed in volume's teardown.
+                pvolUUID = volume.BLANK_UUID
+                cls.log.warn("Failure to get parent of volume %s/%s (%s)"
+                             % (sdUUID, volUUID, e))
+
+            if pvolUUID != volume.BLANK_UUID:
+                cls.teardown(sdUUID=sdUUID, volUUID=pvolUUID, justme=False)
+
 
 class BlockVolume(volume.Volume):
     """ Actually represents a single volume (i.e. part of virtual disk).
@@ -341,8 +386,6 @@ class BlockVolume(volume.Volume):
     def __init__(self, repoPath, sdUUID, imgUUID, volUUID):
         md = self.MetadataClass(repoPath, sdUUID, imgUUID, volUUID)
         volume.Volume.__init__(self, md)
-        self.lvmActivationNamespace = sd.getNamespace(self.sdUUID,
-                                                      LVM_ACTIVATION_NAMESPACE)
 
     @property
     def metaoff(self):
@@ -609,49 +652,6 @@ class BlockVolume(volume.Volume):
     def shareVolumeRollback(cls, taskObj, volPath):
         cls.log.info("Volume rollback for volPath=%s", volPath)
         utils.rmFile(volPath)
-
-    @logskip("ResourceManager")
-    def llPrepare(self, rw=False, setrw=False):
-        """
-        Perform low level volume use preparation
-
-        For the Block Volumes the actual LV activation is wrapped
-        into lvmActivation resource. It is being initialized by the
-        storage domain sitting on top of the encapsulating VG.
-        We just use it here.
-        """
-        if setrw:
-            self.setrw(rw=rw)
-        access = rm.LockType.exclusive if rw else rm.LockType.shared
-        activation = rmanager.acquireResource(self.lvmActivationNamespace,
-                                              self.volUUID, access)
-        activation.autoRelease = False
-
-    @classmethod
-    def teardown(cls, sdUUID, volUUID, justme=False):
-        """
-        Deactivate volume and release resources.
-        Volume deactivation occurs as part of resource releasing.
-        If justme is false, the entire COW chain should be torn down.
-        """
-        cls.log.info("Tearing down volume %s/%s justme %s"
-                     % (sdUUID, volUUID, justme))
-        lvmActivationNamespace = sd.getNamespace(sdUUID,
-                                                 LVM_ACTIVATION_NAMESPACE)
-        rmanager.releaseResource(lvmActivationNamespace, volUUID)
-        if not justme:
-            try:
-                pvolUUID = _getVolumeTag(sdUUID, volUUID, TAG_PREFIX_PARENT)
-            except Exception as e:
-                # If storage not accessible or lvm error occurred
-                # we will failure to get the parent volume.
-                # We can live with it and still succeed in volume's teardown.
-                pvolUUID = volume.BLANK_UUID
-                cls.log.warn("Failure to get parent of volume %s/%s (%s)"
-                             % (sdUUID, volUUID, e))
-
-            if pvolUUID != volume.BLANK_UUID:
-                cls.teardown(sdUUID=sdUUID, volUUID=pvolUUID, justme=False)
 
     def getVolumeTag(self, tagPrefix):
         return self.md.getVolumeTag(tagPrefix)

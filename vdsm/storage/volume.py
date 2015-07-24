@@ -525,6 +525,56 @@ class VolumeMetadata(object):
                 return apparentSize
         return req_size
 
+    def prepare(self, rw=True, justme=False,
+                chainrw=False, setrw=False, force=False):
+        """
+        Prepare volume for use by consumer.
+        If justme is false, the entire COW chain is prepared.
+        Note: setrw arg may be used only by SPM flows.
+        """
+        self.log.info("Volume: preparing volume %s/%s",
+                      self.sdUUID, self.volUUID)
+
+        if not force:
+            # Cannot prepare ILLEGAL volume
+            if not self.isLegal():
+                raise se.prepareIllegalVolumeError(self.volUUID)
+
+            if rw and self.isShared():
+                if chainrw:
+                    rw = False      # Shared cannot be set RW
+                else:
+                    raise se.SharedVolumeNonWritable(self)
+
+            if (not chainrw and rw and self.isInternal() and setrw and
+                    not self.recheckIfLeaf()):
+                raise se.InternalVolumeNonWritable(self)
+
+        self.llPrepare(rw=rw, setrw=setrw)
+        self.updateInvalidatedSize()
+
+        try:
+            if justme:
+                return True
+            pvol = self.produceParent()
+            if pvol:
+                pvol.prepare(rw=chainrw, justme=False,
+                             chainrw=chainrw, setrw=setrw)
+        except Exception:
+            self.log.error("Unexpected error", exc_info=True)
+            self.teardown(self.sdUUID, self.volUUID)
+            raise
+
+        return True
+
+    @classmethod
+    def teardown(cls, sdUUID, volUUID, justme=False):
+        """
+        Teardown volume.
+        If justme is false, the entire COW chain is teared down.
+        """
+        pass
+
 
 class Volume(object):
     log = logging.getLogger('Storage.Volume')
@@ -1091,53 +1141,11 @@ class Volume(object):
 
     def prepare(self, rw=True, justme=False,
                 chainrw=False, setrw=False, force=False):
-        """
-        Prepare volume for use by consumer.
-        If justme is false, the entire COW chain is prepared.
-        Note: setrw arg may be used only by SPM flows.
-        """
-        self.log.info("Volume: preparing volume %s/%s",
-                      self.sdUUID, self.volUUID)
-
-        if not force:
-            # Cannot prepare ILLEGAL volume
-            if not self.isLegal():
-                raise se.prepareIllegalVolumeError(self.volUUID)
-
-            if rw and self.isShared():
-                if chainrw:
-                    rw = False      # Shared cannot be set RW
-                else:
-                    raise se.SharedVolumeNonWritable(self)
-
-            if (not chainrw and rw and self.isInternal() and setrw and
-                    not self.recheckIfLeaf()):
-                raise se.InternalVolumeNonWritable(self)
-
-        self.llPrepare(rw=rw, setrw=setrw)
-        self.updateInvalidatedSize()
-
-        try:
-            if justme:
-                return True
-            pvol = self.produceParent()
-            if pvol:
-                pvol.prepare(rw=chainrw, justme=False,
-                             chainrw=chainrw, setrw=setrw)
-        except Exception:
-            self.log.error("Unexpected error", exc_info=True)
-            self.teardown(self.sdUUID, self.volUUID)
-            raise
-
-        return True
+        return self.md.prepare(rw, justme, chainrw, setrw, force)
 
     @classmethod
     def teardown(cls, sdUUID, volUUID, justme=False):
-        """
-        Teardown volume.
-        If justme is false, the entire COW chain is teared down.
-        """
-        pass
+        cls.MetadataClass.teardown(sdUUID, volUUID, justme)
 
     @classmethod
     def newMetadata(cls, metaId, sdUUID, imgUUID, puuid, size, format, type,
