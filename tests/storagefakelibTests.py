@@ -226,7 +226,7 @@ class FakeLVMSimpleVGTests(VdsmTestCase):
         """
         with self.base_config() as lvm:
             lvm.createLV(self.VG_NAME, self.LV_NAME, str(self.LV_SIZE_MB),
-                         initialTag=blockVolume.TAG_VOL_UNINIT)
+                         initialTags=(blockVolume.TAG_VOL_UNINIT,))
             lv = lvm.getLV(self.VG_NAME, self.LV_NAME)
             self.assertEqual((blockVolume.TAG_VOL_UNINIT,), lv.tags)
 

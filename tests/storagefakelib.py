@@ -80,7 +80,7 @@ class FakeLVM(object):
             self.pvmd[dev]['vg_uuid'] = vg_md['uuid']
 
     def createLV(self, vgName, lvName, size, activate=True, contiguous=False,
-                 initialTag=None):
+                 initialTags=()):
         # Size is expected as a string in MB, convert to a string in bytes.
         size = str(int(size) << 20)
 
@@ -89,7 +89,6 @@ class FakeLVM(object):
         devices = None
 
         state = 'a' if activate else '-'
-        tags = (initialTag,) if initialTag is not None else ()
         lv_attr = dict(voltype='-',
                        permission='w',
                        allocations='i',
@@ -105,7 +104,7 @@ class FakeLVM(object):
                      size=str(size),
                      seg_start_pe='0',
                      devices=devices,
-                     tags=tags,
+                     tags=initialTags,
                      writeable=True,
                      opened=False,
                      active=bool(activate))
