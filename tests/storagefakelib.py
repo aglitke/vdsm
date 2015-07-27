@@ -65,7 +65,7 @@ class FakeLVM(object):
         self.vgmd[vgName] = vg_md
 
     def createLV(self, vgName, lvName, size, activate=True, contiguous=False,
-                 initialTag=None):
+                 initialTags=[]):
         lv_attr = dict(voltype='-',
                        permission='w',
                        allocations='i',
