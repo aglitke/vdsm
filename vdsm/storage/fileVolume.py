@@ -124,18 +124,10 @@ class FileVolumeMetadata(volume.VolumeMetadata):
         """
         return (self.getVolumePath(),)
 
-    def getMetadata(self, metaId=None):
-        """
-        Get Meta data array of key,values lines
-        """
-        if not metaId:
-            metaId = self.getMetadataId()
-
-        volPath, = metaId
-        metaPath = self._getMetaVolumePath(volPath)
-
+    @classmethod
+    def read_metadata(cls, oop, meta_path):
         try:
-            f = self.oop.directReadLines(metaPath)
+            f = oop.directReadLines(meta_path)
             out = {}
             for l in f:
                 if l.startswith("EOF"):
@@ -146,10 +138,21 @@ class FileVolumeMetadata(volume.VolumeMetadata):
                 out[key.strip()] = value.strip()
 
         except Exception as e:
-            self.log.error(e, exc_info=True)
-            raise se.VolumeMetadataReadError("%s: %s" % (metaId, e))
+            cls.log.error(e, exc_info=True)
+            raise se.VolumeMetadataReadError("%s: %s" % (meta_path, e))
 
         return out
+
+    def getMetadata(self, metaId=None):
+        """
+        Get Meta data array of key,values lines
+        """
+        if not metaId:
+            metaId = self.getMetadataId()
+
+        volPath, = metaId
+        metaPath = self._getMetaVolumePath(volPath)
+        return self.read_metadata(self.oop, metaPath)
 
     def getParentId(self):
         """
