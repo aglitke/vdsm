@@ -98,7 +98,7 @@ class FileManifestTests(VdsmTestCase):
             self.assertEquals('3', manifest.getFormat())
             self.assertEquals(os.path.join(STORAGE_REPO, pooluuid),
                               manifest.getRepoPath())
-            self.assertEquals(fileVolume.FileVolume,
+            self.assertEquals(fileVolume.FileVolumeMetadata,
                               manifest.getVolumeClass())
 
     def test_getrepopath_with_iso_domain(self):
@@ -510,7 +510,7 @@ class BlockManifestTests(VdsmTestCase):
                 self.assertEquals('3', manifest.getFormat())
                 self.assertEquals(os.path.join(STORAGE_REPO, poolID),
                                   manifest.getRepoPath())
-                self.assertEquals(blockVolume.BlockVolume,
+                self.assertEquals(blockVolume.BlockVolumeMetadata,
                                   manifest.getVolumeClass())
 
     def test_deleteimage(self):
