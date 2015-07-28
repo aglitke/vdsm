@@ -522,6 +522,9 @@ class StorageDomain(object):
     def mountpoint(self):
         return self._manifest.mountpoint
 
+    def get_manifest(self):
+        return self._manifest
+
     def replaceMetadata(self, md):
         """
         Used by FormatConverter to replace the metadata reader/writer
