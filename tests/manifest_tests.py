@@ -169,7 +169,6 @@ class FileManifestTests(VdsmTestCase):
 
             imguuid = str(uuid.uuid4())
             imagepath = manifest.getImagePath(imguuid)
-            os.makedirs(os.path.dirname(imagepath))
             with open(imagepath, 'w') as f:
                 f.truncate(0)
         self.assertEquals(set(), manifest.getAllImages())

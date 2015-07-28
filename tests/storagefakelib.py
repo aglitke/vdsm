@@ -23,6 +23,7 @@ import random
 from copy import deepcopy
 
 from storage import lvm as real_lvm
+from storage import storage_exception as se
 
 
 class FakeLVM(object):
@@ -154,7 +155,11 @@ class FakeLVM(object):
         return real_lvm.PV(**md)
 
     def getVG(self, vgName):
-        vg_md = deepcopy(self.vgmd[vgName])
+        try:
+            vg_md = deepcopy(self.vgmd[vgName])
+        except KeyError:
+            raise se.VolumeGroupDoesNotExist(vgName)
+
         vg_attr = real_lvm.VG_ATTR(**vg_md['attr'])
         vg_md['attr'] = vg_attr
         return real_lvm.VG(**vg_md)
