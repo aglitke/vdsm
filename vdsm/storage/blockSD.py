@@ -61,7 +61,7 @@ MASTERLV = "master"
 SPECIAL_LVS = (sd.METADATA, sd.LEASES, sd.IDS, sd.INBOX, sd.OUTBOX, MASTERLV)
 
 MASTERLV_SIZE = "1024"  # In MiB = 2 ** 20 = 1024 ** 2 => 1GiB
-BlockSDVol = namedtuple("BlockSDVol", "name, image, parent")
+BlockSDVol = namedtuple("BlockSDVol", "name, image, parent, garbage_meta_id")
 
 log = logging.getLogger("Storage.BlockSD")
 
@@ -145,6 +145,24 @@ def _tellEnd(devPath):
         return f.tell()
 
 
+def _get_garbage_vol_meta_id(sdUUID, volUUID, tags):
+    """
+    If the LV contains TAG_VOL_GARBAGE then treat this volume as garbage.  In
+    order to garbage collect the LV metadata associated with this volume we
+    need the metadata ID.  We cannot call getMetadataId when the LV contains
+    TAG_VOL_UNINIT so we handle this case specially.
+    """
+    if blockVolume.TAG_VOL_GARBAGE not in tags:
+        return None
+    for tag in tags:
+        if tag.startswith(blockVolume.TAG_PREFIX_MD):
+            meta_offset = tag[len(blockVolume.TAG_PREFIX_MD):]
+            return sdUUID, meta_offset
+    log.error("missing offset tag on volume %s/%s", sdUUID, volUUID)
+    raise se.VolumeMetadataReadError("missing offset tag on volume %s/%s" %
+                                     (sdUUID, volUUID))
+
+
 def _getVolsTree(sdUUID):
     lvs = lvm.getLV(sdUUID)
     vols = {}
@@ -157,7 +175,8 @@ def _getVolsTree(sdUUID):
             elif tag.startswith(blockVolume.TAG_PREFIX_PARENT):
                 parent = tag[len(blockVolume.TAG_PREFIX_PARENT):]
             if parent and image:
-                vols[lv.name] = BlockSDVol(lv.name, image, parent)
+                gc_meta_id = _get_garbage_vol_meta_id(sdUUID, lv.name, lv.tags)
+                vols[lv.name] = BlockSDVol(lv.name, image, parent, gc_meta_id)
                 break
         else:
             if lv.name not in SPECIAL_LVS:
@@ -176,6 +195,12 @@ def getAllVolumes(sdUUID):
     Template self image is the 1st term in template volume entry images.
     """
     vols = _getVolsTree(sdUUID)
+
+    # Remove volumes awaiting garbage collection from the result
+    for vol_id in vols.iterkeys():
+        if vols[vol_id].garbage_meta_id is not None:
+            del vols[vol_id]
+
     res = {}
     for volName in vols.iterkeys():
         res[volName] = {'imgs': [], 'parent': None}
