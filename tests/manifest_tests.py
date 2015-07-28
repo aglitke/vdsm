@@ -72,7 +72,7 @@ class FileManifestTests(VdsmTestCase):
 
     def test_getmetaparam(self):
         with namedTemporaryDir() as tmpdir:
-            metadata = {}
+            metadata = {sd.DMDK_VERSION: 3}
             manifest = make_filesd_manifest(tmpdir, metadata)
             metadata[sd.DMDK_SDUUID] = manifest.sdUUID
             self.assertEquals(manifest.sdUUID,
@@ -81,8 +81,6 @@ class FileManifestTests(VdsmTestCase):
     def test_metadata(self):
         with namedTemporaryDir() as tmpdir:
             metadata = FakeMetadata()
-            manifest = make_filesd_manifest(tmpdir, metadata)
-
             metadata[sd.DMDK_ROLE] = sd.REGULAR_DOMAIN
             metadata[sd.DMDK_CLASS] = sd.DATA_DOMAIN
             metadata[sd.DMDK_TYPE] = sd.LOCALFS_DOMAIN
@@ -90,6 +88,7 @@ class FileManifestTests(VdsmTestCase):
             pooluuid = str(uuid.uuid4())
             metadata[sd.DMDK_POOLS] = [pooluuid]
 
+            manifest = make_filesd_manifest(tmpdir, metadata)
             self.assertEquals(sd.REGULAR_DOMAIN, manifest.getDomainRole())
             self.assertEquals(sd.DATA_DOMAIN, manifest.getDomainClass())
             self.assertTrue(manifest.isData())
@@ -105,8 +104,10 @@ class FileManifestTests(VdsmTestCase):
     def test_getrepopath_with_iso_domain(self):
         with namedTemporaryDir() as tmpdir:
             metadata = FakeMetadata()
-            manifest = make_filesd_manifest(tmpdir, metadata)
             metadata[sd.DMDK_CLASS] = sd.ISO_DOMAIN
+            metadata[sd.DMDK_VERSION] = 3
+
+            manifest = make_filesd_manifest(tmpdir, metadata)
             self.assertTrue(manifest.isISO())
             self.assertRaises(se.ImagesNotSupportedError, manifest.getRepoPath)
 
@@ -148,8 +149,9 @@ class FileManifestTests(VdsmTestCase):
             pooluuid = str(uuid.uuid4())
             pooldir = os.path.join(tmpdir, pooluuid)
             metadata = FakeMetadata()
-            manifest = make_filesd_manifest(pooldir, metadata)
+            metadata[sd.DMDK_VERSION] = 3
             metadata[sd.DMDK_POOLS] = [pooluuid]
+            manifest = make_filesd_manifest(pooldir, metadata)
 
             create_volume_tree(manifest, vols)
             with MonkeyPatchScope([(sd, 'storage_repository', tmpdir)]):
@@ -161,8 +163,9 @@ class FileManifestTests(VdsmTestCase):
             pooluuid = str(uuid.uuid4())
             pooldir = os.path.join(tmpdir, pooluuid)
             metadata = FakeMetadata()
-            manifest = make_filesd_manifest(pooldir, metadata)
+            metadata[sd.DMDK_VERSION] = 3
             metadata[sd.DMDK_POOLS] = [pooluuid]
+            manifest = make_filesd_manifest(pooldir, metadata)
 
             imguuid = str(uuid.uuid4())
             imagepath = manifest.getImagePath(imguuid)
@@ -176,8 +179,9 @@ class FileManifestTests(VdsmTestCase):
             pooluuid = str(uuid.uuid4())
             pooldir = os.path.join(tmpdir, pooluuid)
             metadata = FakeMetadata()
-            manifest = make_filesd_manifest(pooldir, metadata)
+            metadata[sd.DMDK_VERSION] = 3
             metadata[sd.DMDK_POOLS] = [pooluuid]
+            manifest = make_filesd_manifest(pooldir, metadata)
 
             badimg = 'not-an-image'
             imagepath = manifest.getImagePath(badimg)
@@ -189,8 +193,9 @@ class FileManifestTests(VdsmTestCase):
             pooluuid = str(uuid.uuid4())
             pooldir = os.path.join(tmpdir, pooluuid)
             metadata = FakeMetadata()
-            manifest = make_filesd_manifest(pooldir, metadata)
+            metadata[sd.DMDK_VERSION] = 3
             metadata[sd.DMDK_POOLS] = [pooluuid]
+            manifest = make_filesd_manifest(pooldir, metadata)
 
             imguuid = str(uuid.uuid4())
             imagepath = manifest.getImagePath(imguuid)
@@ -206,8 +211,9 @@ class FileManifestTests(VdsmTestCase):
             pooluuid = str(uuid.uuid4())
             pooldir = os.path.join(tmpdir, pooluuid)
             metadata = FakeMetadata()
-            manifest = make_filesd_manifest(pooldir, metadata)
+            metadata[sd.DMDK_VERSION] = 3
             metadata[sd.DMDK_POOLS] = [pooluuid]
+            manifest = make_filesd_manifest(pooldir, metadata)
 
             create_volume_tree(manifest, vols)
             with MonkeyPatchScope([(sd, 'storage_repository', tmpdir)]):
@@ -229,70 +235,77 @@ class BlockManifestTests(VdsmTestCase):
 
     def test_getreaddelay(self):
         with namedTemporaryDir() as tmpdir:
-            manifest = make_blocksd_manifest(tmpdir)
-            vg_name = manifest.sdUUID
             lvm = FakeLVM(tmpdir)
-            make_file(lvm.lvPath(vg_name, 'metadata'))
-
             with MonkeyPatchScope([(blockSD, 'lvm', lvm)]):
+                manifest = make_blocksd_manifest()
+                vg_name = manifest.sdUUID
+                make_file(lvm.lvPath(vg_name, 'metadata'))
                 self.assertIsInstance(manifest.getReadDelay(), float)
 
     def test_getvsize_active_lv(self):
         # Tests the path when the device file is present
         with namedTemporaryDir() as tmpdir:
-            manifest = make_blocksd_manifest(tmpdir)
             lvm = FakeLVM(tmpdir)
-            vg_name = make_vg(lvm, manifest)
-            lv_name = str(uuid.uuid4())
-            lvm.createLV(vg_name, lv_name, VOLSIZE)
-            lvm.fake_lv_symlink_create(vg_name, lv_name)
             with MonkeyPatchScope([(blockSD, 'lvm', lvm)]):
+                manifest = make_blocksd_manifest(tmpdir)
+                vg_name = make_vg(lvm, manifest)
+                lv_name = str(uuid.uuid4())
+                lvm.createLV(vg_name, lv_name, VOLSIZE)
+                lvm.fake_lv_symlink_create(vg_name, lv_name)
                 self.assertEqual(VOLSIZE,
                                  manifest.getVSize('<imgUUID>', lv_name))
 
     def test_getvsize_inactive_lv(self):
         # Tests the path when the device file is not present
         with namedTemporaryDir() as tmpdir:
-            manifest = make_blocksd_manifest(tmpdir)
             lvm = FakeLVM(tmpdir)
-            vg_name = make_vg(lvm, manifest)
-            lv_name = str(uuid.uuid4())
-            lvm.createLV(vg_name, lv_name, VOLSIZE)
             with MonkeyPatchScope([(blockSD, 'lvm', lvm)]):
+                manifest = make_blocksd_manifest(tmpdir)
+                vg_name = make_vg(lvm, manifest)
+                lv_name = str(uuid.uuid4())
+                lvm.createLV(vg_name, lv_name, VOLSIZE)
                 self.assertEqual(VOLSIZE,
                                  manifest.getVSize('<imgUUID>', lv_name))
 
     def test_getmetaparam(self):
         with namedTemporaryDir() as tmpdir:
             metadata = FakeMetadata()
-            manifest = make_blocksd_manifest(tmpdir, metadata)
-            metadata[sd.DMDK_SDUUID] = manifest.sdUUID
-            self.assertEquals(manifest.sdUUID,
-                              manifest.getMetaParam(sd.DMDK_SDUUID))
+            metadata[sd.DMDK_VERSION] = 3
+            lvm = FakeLVM(tmpdir)
+            with MonkeyPatchScope([(blockSD, 'lvm', lvm)]):
+                manifest = make_blocksd_manifest(tmpdir, metadata)
+                metadata[sd.DMDK_SDUUID] = manifest.sdUUID
+                self.assertEquals(manifest.sdUUID,
+                                  manifest.getMetaParam(sd.DMDK_SDUUID))
 
     def test_getblocksize_defaults(self):
         with namedTemporaryDir() as tmpdir:
-            manifest = make_blocksd_manifest(tmpdir)
-            self.assertEquals(512, manifest.logBlkSize)
-            self.assertEquals(512, manifest.phyBlkSize)
+            lvm = FakeLVM(tmpdir)
+            with MonkeyPatchScope([(blockSD, 'lvm', lvm)]):
+                manifest = make_blocksd_manifest(tmpdir)
+                self.assertEquals(512, manifest.logBlkSize)
+                self.assertEquals(512, manifest.phyBlkSize)
 
     def test_getblocksize(self):
         with namedTemporaryDir() as tmpdir:
-            metadata = {blockSD.DMDK_LOGBLKSIZE: 2048,
+            metadata = {sd.DMDK_VERSION: 3,
+                        blockSD.DMDK_LOGBLKSIZE: 2048,
                         blockSD.DMDK_PHYBLKSIZE: 1024}
-            manifest = make_blocksd_manifest(tmpdir, metadata)
-            self.assertEquals(2048, manifest.logBlkSize)
-            self.assertEquals(1024, manifest.phyBlkSize)
+            lvm = FakeLVM(tmpdir)
+            with MonkeyPatchScope([(blockSD, 'lvm', lvm)]):
+                manifest = make_blocksd_manifest(tmpdir, metadata)
+                self.assertEquals(2048, manifest.logBlkSize)
+                self.assertEquals(1024, manifest.phyBlkSize)
 
     def test_metasize(self):
         """
         Test the check for enough free space to accommodate the metadata LV
         """
         with namedTemporaryDir() as tmpdir:
-            manifest = make_blocksd_manifest(tmpdir)
             lvm = FakeLVM(tmpdir)
-            vg_name = make_vg(lvm, manifest)
             with MonkeyPatchScope([(blockSD, 'lvm', lvm)]):
+                manifest = make_blocksd_manifest(tmpdir)
+                vg_name = make_vg(lvm, manifest)
                 # 512 is derived from calculations in the metaSize function.
                 # Our small volume group will use the minimum allowed size.
                 self.assertEquals(self.MINIMUM_METADATA_SIZE / MB,
@@ -307,16 +320,16 @@ class BlockManifestTests(VdsmTestCase):
         PV in the VG.  Check that we raise an error if this is not the case.
         """
         with namedTemporaryDir() as tmpdir:
-            manifest = make_blocksd_manifest(tmpdir)
             lvm = FakeLVM(tmpdir)
-            devices = get_random_devices(1)
-            vg_name = make_vg(lvm, manifest, devices)
-
-            # Fake a bad first extent (1) for our 'metadata' LV
-            lvm.lvmd[vg_name][sd.METADATA]['devices'] = \
-                '/dev/mapper/{0}(1)'.format(devices[0])
-
             with MonkeyPatchScope([(blockSD, 'lvm', lvm)]):
+                manifest = make_blocksd_manifest(tmpdir)
+                devices = get_random_devices(1)
+                vg_name = make_vg(lvm, manifest, devices)
+
+                # Fake a bad first extent (1) for our 'metadata' LV
+                lvm.lvmd[vg_name][sd.METADATA]['devices'] = \
+                    '/dev/mapper/{0}(1)'.format(devices[0])
+
                 self.assertRaises(se.MetaDataMappingError,
                                   manifest.getMetaDataMapping, vg_name)
 
@@ -329,12 +342,11 @@ class BlockManifestTests(VdsmTestCase):
            number in the VG map to which this PV's first pe maps.
         """
         with namedTemporaryDir() as tmpdir:
-            manifest = make_blocksd_manifest(tmpdir)
             lvm = FakeLVM(tmpdir)
-            devices = get_random_devices(3)
-            vg_name = make_vg(lvm, manifest, devices)
-
             with MonkeyPatchScope([(blockSD, 'lvm', lvm)]):
+                manifest = make_blocksd_manifest(tmpdir)
+                devices = get_random_devices(3)
+                vg_name = make_vg(lvm, manifest, devices)
                 mapping = manifest.getMetaDataMapping(vg_name)
                 # The values below assume that each device in the VG is 10G
                 self.assertEquals(3, len(mapping))
@@ -360,16 +372,16 @@ class BlockManifestTests(VdsmTestCase):
                         'uuid': '3ApdDe-dN8D-i6ay-cr60-uu3B-BxCclJ'}}
 
         with namedTemporaryDir() as tmpdir:
-            manifest = make_blocksd_manifest(tmpdir)
             lvm = FakeLVM(tmpdir)
-            vg_name = make_vg(lvm, manifest, devices)
-
-            # Remove PV info from lvm to test that we rely on the info dict
-            for i in 0, 1:
-                del lvm.pvmd[devices[i]]
-
             with MonkeyPatchScope([(blockSD, 'lvm', lvm)]):
+                manifest = make_blocksd_manifest(tmpdir)
+                vg_name = make_vg(lvm, manifest, devices)
+
+                # Remove PV info from lvm to test that we rely on the info dict
+                for i in 0, 1:
+                    del lvm.pvmd[devices[i]]
                 mapping = manifest.getMetaDataMapping(vg_name, info)
+
                 self.assertEquals(3, len(mapping))
                 self.assertEquals(name_to_guid(devices[2]),
                                   mapping['PV2']['guid'])
@@ -381,12 +393,12 @@ class BlockManifestTests(VdsmTestCase):
         Test the positive flow for extendVolume making sure the size is updated
         """
         with namedTemporaryDir() as tmpdir:
-            manifest = make_blocksd_manifest(tmpdir)
             lvm = FakeLVM(tmpdir)
-            vg_name = make_vg(lvm, manifest)
-            lv = str(uuid.uuid4())
-            lvm.createLV(vg_name, lv, VOLSIZE)
             with MonkeyPatchScope([(blockSD, 'lvm', lvm)]):
+                manifest = make_blocksd_manifest(tmpdir)
+                vg_name = make_vg(lvm, manifest)
+                lv = str(uuid.uuid4())
+                lvm.createLV(vg_name, lv, VOLSIZE)
                 self.assertEquals(VOLSIZE, manifest.getVSize('unused', lv))
                 manifest.extendVolume(lv, 2 * VOLSIZE)
                 self.assertEquals(2 * VOLSIZE, manifest.getVSize('unused', lv))
@@ -398,23 +410,23 @@ class BlockManifestTests(VdsmTestCase):
         """
         with namedTemporaryDir() as tmpdir:
             metadata = FakeMetadata()
-            manifest = make_blocksd_manifest(tmpdir, metadata)
             metadata[sd.DMDK_VERSION] = 0
             lvm = FakeLVM(tmpdir)
-            nr_initial_devices = 5
-            devices = get_random_devices(nr_initial_devices)
-            make_vg(lvm, manifest, devices)
-
-            new_dev_count = blockSD.MAX_PVS - nr_initial_devices + 1
-            devices = get_random_devices(new_dev_count)
             with MonkeyPatchScope([(blockSD, 'lvm', lvm),
                                    (multipath, 'getMPDevNamesIter',
                                     lambda: iter(devices))]):
+                manifest = make_blocksd_manifest(tmpdir, metadata)
+                nr_initial_devices = 5
+                devices = get_random_devices(nr_initial_devices)
+                make_vg(lvm, manifest, devices)
+
                 # Part of the test setup requires that the domain metadata
                 # includes the PV mapping information for the original device
                 # list.  Rather than hard-coding it, it's easier to use
                 # updateMapping() which is designed for this purpose.
                 manifest.updateMapping()
+                new_dev_count = blockSD.MAX_PVS - nr_initial_devices + 1
+                devices = get_random_devices(new_dev_count)
                 self.assertRaises(se.StorageDomainIsMadeFromTooManyPVs,
                                   manifest.extend, devices, False)
 
@@ -424,13 +436,13 @@ class BlockManifestTests(VdsmTestCase):
         """
         with namedTemporaryDir() as tmpdir:
             metadata = FakeMetadata()
-            manifest = make_blocksd_manifest(tmpdir, metadata)
             metadata[sd.DMDK_VERSION] = 3
             lvm = FakeLVM(tmpdir)
             devices = get_random_devices()
             with MonkeyPatchScope([(blockSD, 'lvm', lvm),
                                    (multipath, 'getMPDevNamesIter',
                                     lambda: list())]):
+                manifest = make_blocksd_manifest(tmpdir, metadata)
                 self.assertRaises(se.InaccessiblePhysDev,
                                   manifest.extend, devices, False)
 
@@ -440,15 +452,15 @@ class BlockManifestTests(VdsmTestCase):
         """
         with namedTemporaryDir() as tmpdir:
             metadata = FakeMetadata()
-            manifest = make_blocksd_manifest(tmpdir, metadata)
             metadata[sd.DMDK_VERSION] = 3
             lvm = FakeLVM(tmpdir)
-            devices = get_random_devices(1)
-            vg_name = make_vg(lvm, manifest, devices)
-            new_devices = get_random_devices(1)
             with MonkeyPatchScope([(blockSD, 'lvm', lvm),
                                    (multipath, 'getMPDevNamesIter',
                                     lambda: iter(new_devices))]):
+                manifest = make_blocksd_manifest(tmpdir, metadata)
+                devices = get_random_devices(1)
+                vg_name = make_vg(lvm, manifest, devices)
+                new_devices = get_random_devices(1)
                 manifest.updateMapping()
                 manifest.extend(new_devices, False)
                 newSize = 2 * (10 * GB - self.PV_UNUSABLE_SIZE)
@@ -461,11 +473,11 @@ class BlockManifestTests(VdsmTestCase):
         Test that resizePV handles device size update and metadata makes sense.
         """
         with namedTemporaryDir() as tmpdir:
-            manifest = make_blocksd_manifest(tmpdir)
             lvm = FakeLVM(tmpdir)
-            devices = get_random_devices(1)
-            vg_name = make_vg(lvm, manifest, devices)
             with MonkeyPatchScope([(blockSD, 'lvm', lvm)]):
+                manifest = make_blocksd_manifest(tmpdir)
+                devices = get_random_devices(1)
+                vg_name = make_vg(lvm, manifest, devices)
                 # Set up the current mapping according to current device size
                 manifest.updateMapping()
                 pv = lvm.pvmd.values()[0]
@@ -479,24 +491,27 @@ class BlockManifestTests(VdsmTestCase):
                 self.assertEquals(newSize, lvm.getVG(vg_name).size)
 
     def test_metadata(self):
-        metadata = FakeMetadata()
-        manifest = make_blocksd_manifest(None, metadata)
-        metadata[sd.DMDK_ROLE] = sd.REGULAR_DOMAIN
-        metadata[sd.DMDK_CLASS] = sd.DATA_DOMAIN
-        metadata[sd.DMDK_TYPE] = sd.ISCSI_DOMAIN
-        metadata[sd.DMDK_VERSION] = 3
-        poolID = str(uuid.uuid4())
-        metadata[sd.DMDK_POOLS] = [poolID]
+        with namedTemporaryDir() as tmpdir:
+            metadata = FakeMetadata()
+            metadata[sd.DMDK_ROLE] = sd.REGULAR_DOMAIN
+            metadata[sd.DMDK_CLASS] = sd.DATA_DOMAIN
+            metadata[sd.DMDK_TYPE] = sd.ISCSI_DOMAIN
+            metadata[sd.DMDK_VERSION] = 3
+            poolID = str(uuid.uuid4())
+            metadata[sd.DMDK_POOLS] = [poolID]
 
-        self.assertEquals(sd.REGULAR_DOMAIN, manifest.getDomainRole())
-        self.assertEquals(sd.DATA_DOMAIN, manifest.getDomainClass())
-        self.assertEquals(sd.ISCSI_DOMAIN, manifest.getStorageType())
-        self.assertEquals(3, manifest.getVersion())
-        self.assertEquals('3', manifest.getFormat())
-        self.assertEquals(os.path.join(STORAGE_REPO, poolID),
-                          manifest.getRepoPath())
-        self.assertEquals(blockVolume.BlockVolume,
-                          manifest.getVolumeClass())
+            lvm = FakeLVM(tmpdir)
+            with MonkeyPatchScope([(blockSD, 'lvm', lvm)]):
+                manifest = make_blocksd_manifest(tmpdir, metadata)
+                self.assertEquals(sd.REGULAR_DOMAIN, manifest.getDomainRole())
+                self.assertEquals(sd.DATA_DOMAIN, manifest.getDomainClass())
+                self.assertEquals(sd.ISCSI_DOMAIN, manifest.getStorageType())
+                self.assertEquals(3, manifest.getVersion())
+                self.assertEquals('3', manifest.getFormat())
+                self.assertEquals(os.path.join(STORAGE_REPO, poolID),
+                                  manifest.getRepoPath())
+                self.assertEquals(blockVolume.BlockVolume,
+                                  manifest.getVolumeClass())
 
     def test_deleteimage(self):
         imguuid = str(uuid.uuid4())
@@ -506,18 +521,18 @@ class BlockManifestTests(VdsmTestCase):
                      vols[2]: sd.ImgsPar([imguuid], vols[1])}
 
         with namedTemporaryDir() as tmpdir:
-            manifest = make_blocksd_manifest(tmpdir=tmpdir)
             lvm = FakeLVM(tmpdir)
-            vg_name = make_vg(lvm, manifest)
-            for lv_name, blocksdvol in vols_imgs.items():
-                lvm.createLV(vg_name, lv_name, VOLSIZE)
-                img_tag = blockVolume.TAG_PREFIX_IMAGE + imguuid
-                lvm.addtag(vg_name, lv_name, img_tag)
-
-            imgpath = os.path.join(manifest.domaindir, sd.DOMAIN_IMAGES,
-                                   imguuid)
-            os.makedirs(imgpath)
             with MonkeyPatchScope([(blockSD, 'lvm', lvm)]):
+                manifest = make_blocksd_manifest(tmpdir)
+                vg_name = make_vg(lvm, manifest)
+                for lv_name, blocksdvol in vols_imgs.items():
+                    lvm.createLV(vg_name, lv_name, VOLSIZE)
+                    img_tag = blockVolume.TAG_PREFIX_IMAGE + imguuid
+                    lvm.addtag(vg_name, lv_name, img_tag)
+
+                imgpath = os.path.join(manifest.domaindir, sd.DOMAIN_IMAGES,
+                                       imguuid)
+                os.makedirs(imgpath)
                 manifest.deleteImage(manifest.sdUUID, imguuid, vols_imgs)
                 lvs = lvm.getLV(vg_name)
                 self.assertEquals(1, len(lvs))
@@ -528,7 +543,7 @@ class BlockManifestTests(VdsmTestCase):
         with namedTemporaryDir() as tmpdir:
             lvm = FakeLVM(tmpdir)
             with MonkeyPatchScope([(blockSD, 'lvm', lvm)]):
-                manifest = make_blocksd_manifest()
+                manifest = make_blocksd_manifest(tmpdir)
                 vg_name = make_vg(lvm, manifest)
                 create_lv_tree(lvm, vg_name, vols)
                 yield manifest
@@ -616,6 +631,33 @@ class BlockManifestTests(VdsmTestCase):
                 allvols = manifest.getAllVolumes()
                 self.assertNotIn(bad_vol_id, allvols)
                 self.assertEquals(bad_vol_id, allvols[vol_id].parent)
+
+
+class BlockDomainMetadataSlotTests(VdsmTestCase):
+
+    def test_metaslot_selection(self):
+        with namedTemporaryDir() as tmpdir:
+            lvm = FakeLVM(tmpdir)
+            with MonkeyPatchScope([(blockSD, 'lvm', lvm)]):
+                manifest = make_blocksd_manifest(tmpdir)
+                make_vg(lvm, manifest)
+                lvs = get_uuid_list(2)
+                for lv, offset in zip(lvs, [4, 7]):
+                    lvm.createLV(manifest.sdUUID, lv, VOLSIZE)
+                    tag = blockVolume.TAG_PREFIX_MD + str(offset)
+                    lvm.addtag(manifest.sdUUID, lv, tag)
+                with manifest.acquireVolumeMetadataSlot(None, 1) as mdSlot:
+                    self.assertEqual(mdSlot, 5)
+
+    def test_metaslot_lock(self):
+        with namedTemporaryDir() as tmpdir:
+            lvm = FakeLVM(tmpdir)
+            with MonkeyPatchScope([(blockSD, 'lvm', lvm)]):
+                manifest = make_blocksd_manifest(tmpdir)
+                make_vg(lvm, manifest)
+                with manifest.acquireVolumeMetadataSlot(None, 1):
+                    acquired = manifest._lvTagMetaSlotLock.acquire(False)
+                    self.assertEqual(acquired, False)
 
 
 def name_to_guid(name):

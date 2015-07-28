@@ -122,6 +122,9 @@ class FakeLVM(object):
         tags.remove(tag)
         self.lvmd[vg][lv]['tags'] = tuple(tags)
 
+    def activateLVs(self, vgName, lvNames):
+        pass
+
     def changelv(self, vg, lvs, attrs):
         lvs = _normalizeargs(lvs)
         for lv in lvs:

@@ -39,6 +39,7 @@ def make_blocksd_manifest(tmpdir=None, metadata=None, sduuid=None):
         sduuid = str(uuid.uuid4())
     if metadata is None:
         metadata = FakeMetadata()
+        metadata[sd.DMDK_VERSION] = 3
     manifest = blockSD.BlockStorageDomainManifest(sduuid, metadata)
     if tmpdir is not None:
         manifest.domaindir = tmpdir
@@ -81,7 +82,7 @@ def make_filesd_manifest(tmpdir, metadata=None):
     domain_path = os.path.join(tmpdir, sduuid)
     make_file(get_metafile_path(domain_path))
     if metadata is None:
-        metadata = FakeMetadata()
+        metadata = FakeMetadata({sd.DMDK_VERSION: 3})
     manifest = fileSD.FileStorageDomainManifest(domain_path, metadata)
     os.makedirs(os.path.join(manifest.domaindir, sduuid, sd.DOMAIN_IMAGES))
     return manifest
