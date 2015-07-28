@@ -27,12 +27,13 @@ from storagetestlib import (make_filesd_manifest, make_blocksd_manifest,
                             make_file_volume, make_vg, get_random_devices,
                             FakeMetadata)
 
-from storage import sd, blockSD, multipath
+from storage import sd, blockSD, fileVolume, blockVolume, multipath
 from storage import storage_exception as se
 
 MB = 1 << 20
 GB = 1 << 30
 VOLSIZE = 1 * MB
+STORAGE_REPO = '/rhev/data-center'
 
 
 class FileManifestTests(VdsmTestCase):
@@ -74,6 +75,38 @@ class FileManifestTests(VdsmTestCase):
             metadata[sd.DMDK_SDUUID] = manifest.sdUUID
             self.assertEquals(manifest.sdUUID,
                               manifest.getMetaParam(sd.DMDK_SDUUID))
+
+    def test_metadata(self):
+        with namedTemporaryDir() as tmpdir:
+            metadata = FakeMetadata()
+            manifest = make_filesd_manifest(tmpdir, metadata)
+
+            metadata[sd.DMDK_ROLE] = sd.REGULAR_DOMAIN
+            metadata[sd.DMDK_CLASS] = sd.DATA_DOMAIN
+            metadata[sd.DMDK_TYPE] = sd.LOCALFS_DOMAIN
+            metadata[sd.DMDK_VERSION] = 3
+            pooluuid = str(uuid.uuid4())
+            metadata[sd.DMDK_POOLS] = [pooluuid]
+
+            self.assertEquals(sd.REGULAR_DOMAIN, manifest.getDomainRole())
+            self.assertEquals(sd.DATA_DOMAIN, manifest.getDomainClass())
+            self.assertTrue(manifest.isData())
+            self.assertFalse(manifest.isBackup())
+            self.assertEquals(sd.LOCALFS_DOMAIN, manifest.getStorageType())
+            self.assertEquals(3, manifest.getVersion())
+            self.assertEquals('3', manifest.getFormat())
+            self.assertEquals(os.path.join(STORAGE_REPO, pooluuid),
+                              manifest.getRepoPath())
+            self.assertEquals(fileVolume.FileVolume,
+                              manifest.getVolumeClass())
+
+    def test_getrepopath_with_iso_domain(self):
+        with namedTemporaryDir() as tmpdir:
+            metadata = FakeMetadata()
+            manifest = make_filesd_manifest(tmpdir, metadata)
+            metadata[sd.DMDK_CLASS] = sd.ISO_DOMAIN
+            self.assertTrue(manifest.isISO())
+            self.assertRaises(se.ImagesNotSupportedError, manifest.getRepoPath)
 
 
 class BlockManifestTests(VdsmTestCase):
@@ -330,6 +363,26 @@ class BlockManifestTests(VdsmTestCase):
                                   lvm.getLV(vg_name, sd.METADATA).size)
                 newSize = 20 * GB - self.PV_UNUSABLE_SIZE
                 self.assertEquals(newSize, lvm.getVG(vg_name).size)
+
+    def test_metadata(self):
+        metadata = FakeMetadata()
+        manifest = make_blocksd_manifest(None, metadata)
+        metadata[sd.DMDK_ROLE] = sd.REGULAR_DOMAIN
+        metadata[sd.DMDK_CLASS] = sd.DATA_DOMAIN
+        metadata[sd.DMDK_TYPE] = sd.ISCSI_DOMAIN
+        metadata[sd.DMDK_VERSION] = 3
+        poolID = str(uuid.uuid4())
+        metadata[sd.DMDK_POOLS] = [poolID]
+
+        self.assertEquals(sd.REGULAR_DOMAIN, manifest.getDomainRole())
+        self.assertEquals(sd.DATA_DOMAIN, manifest.getDomainClass())
+        self.assertEquals(sd.ISCSI_DOMAIN, manifest.getStorageType())
+        self.assertEquals(3, manifest.getVersion())
+        self.assertEquals('3', manifest.getFormat())
+        self.assertEquals(os.path.join(STORAGE_REPO, poolID),
+                          manifest.getRepoPath())
+        self.assertEquals(blockVolume.BlockVolume,
+                          manifest.getVolumeClass())
 
 
 def name_to_guid(name):
