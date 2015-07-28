@@ -25,7 +25,7 @@ from monkeypatch import MonkeyPatchScope
 from storagefakelib import FakeLVM
 from storagetestlib import (make_filesd_manifest, make_blocksd_manifest,
                             make_file_volume, make_vg, get_random_devices,
-                            FakeMetadata)
+                            FakeMetadata, get_uuid_list)
 
 from storage import sd, blockSD, fileVolume, blockVolume, multipath
 from storage import storage_exception as se
@@ -107,6 +107,35 @@ class FileManifestTests(VdsmTestCase):
             metadata[sd.DMDK_CLASS] = sd.ISO_DOMAIN
             self.assertTrue(manifest.isISO())
             self.assertRaises(se.ImagesNotSupportedError, manifest.getRepoPath)
+
+    def test_deleteimage(self):
+        with namedTemporaryDir() as tmpdir:
+            manifest = make_filesd_manifest(tmpdir)
+            imguuid = str(uuid.uuid4())
+            vols = get_uuid_list(3)
+            imagepath = manifest.getImagePath(imguuid)
+            for voluuid in vols:
+                make_file_volume(manifest.domaindir, VOLSIZE, imguuid, voluuid)
+                volpath = os.path.join(imagepath, voluuid)
+                self.assertTrue(os.path.exists(volpath))
+            manifest.deleteImage(manifest.sdUUID, imguuid, vols)
+            self.assertFalse(os.path.exists(imagepath))
+
+    def test_deleteimage_dir_not_empty(self):
+        with namedTemporaryDir() as tmpdir:
+            manifest = make_filesd_manifest(tmpdir)
+            imguuid = str(uuid.uuid4())
+            vols = get_uuid_list(2)
+            imagepath = manifest.getImagePath(imguuid)
+            for voluuid in vols:
+                make_file_volume(manifest.domaindir, VOLSIZE, imguuid, voluuid)
+                volpath = os.path.join(imagepath, voluuid)
+                self.assertTrue(os.path.exists(volpath))
+            self.assertRaises(se.ImageDeleteError, manifest.deleteImage,
+                              manifest.sdUUID, imguuid, vols[1:])
+            dirname, basename = os.path.split(imagepath)
+            deldir = os.path.join(dirname, sd.REMOVED_IMAGE_PREFIX + basename)
+            self.assertTrue(os.path.exists(deldir))
 
 
 class BlockManifestTests(VdsmTestCase):
@@ -383,6 +412,31 @@ class BlockManifestTests(VdsmTestCase):
                           manifest.getRepoPath())
         self.assertEquals(blockVolume.BlockVolume,
                           manifest.getVolumeClass())
+
+    def test_deleteimage(self):
+        imguuid = str(uuid.uuid4())
+        vols = get_uuid_list(3)
+        vols_imgs = {vols[0]: sd.ImgsPar([imguuid], sd.BLANK_UUID),
+                     vols[1]: sd.ImgsPar([imguuid], vols[0]),
+                     vols[2]: sd.ImgsPar([imguuid], vols[1])}
+
+        with namedTemporaryDir() as tmpdir:
+            manifest = make_blocksd_manifest(tmpdir=tmpdir)
+            lvm = FakeLVM(tmpdir)
+            vg_name = make_vg(lvm, manifest)
+            for lv_name, blocksdvol in vols_imgs.items():
+                lvm.createLV(vg_name, lv_name, VOLSIZE)
+                img_tag = blockVolume.TAG_PREFIX_IMAGE + imguuid
+                lvm.addtag(vg_name, lv_name, img_tag)
+
+            imgpath = os.path.join(manifest.domaindir, sd.DOMAIN_IMAGES,
+                                   imguuid)
+            os.makedirs(imgpath)
+            with MonkeyPatchScope([(blockSD, 'lvm', lvm)]):
+                manifest.deleteImage(manifest.sdUUID, imguuid, vols_imgs)
+                lvs = lvm.getLV(vg_name)
+                self.assertEquals(1, len(lvs))
+                self.assertEquals(sd.METADATA, lvs[0].name)
 
 
 def name_to_guid(name):

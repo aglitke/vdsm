@@ -113,6 +113,34 @@ class FakeLVM(object):
         # TODO: Update the allocated physical extents
         self.lvmd[vgName][lvName]['size'] = size
 
+    def addtag(self, vg, lv, tag):
+        cur_tags = self.lvmd[vg][lv]['tags']
+        self.lvmd[vg][lv]['tags'] = tuple(cur_tags + (tag,))
+
+    def deltag(self, vg, lv, tag):
+        tags = list(self.lvmd[vg][lv]['tags'])
+        tags.remove(tag)
+        self.lvmd[vg][lv]['tags'] = tuple(tags)
+
+    def changelv(self, vg, lvs, attrs):
+        lvs = _normalizeargs(lvs)
+        for lv in lvs:
+            for attr in attrs:
+                if attr == ('-a', 'y'):  # Activate lv
+                    pass
+                elif attr[0] == '--addtag':
+                    self.addtag(vg, lv, attr[1])
+                elif attr[0] == '--deltag':
+                    self.deltag(vg, lv, attr[1])
+                else:
+                    raise NotImplementedError("changelv; %s", attr)
+
+    def removeLVs(self, vgName, lvNames):
+        lv_names = _normalizeargs(lvNames)
+        for lv_name in lv_names:
+            del(self.lvmd[vgName][lv_name])
+        self.vgmd[vgName]['lv_count'] -= len(lv_names)
+
     def lvPath(self, vgName, lvName):
         return os.path.join(self.root, "dev", vgName, lvName)
 
@@ -128,7 +156,10 @@ class FakeLVM(object):
         vg_md['attr'] = vg_attr
         return real_lvm.VG(**vg_md)
 
-    def getLV(self, vgName, lvName):
+    def getLV(self, vgName, lvName=None):
+        if lvName is None:
+            lvs = self.lvmd[vgName].keys()
+            return [self.getLV(vgName, lv) for lv in lvs]
         lv_md = deepcopy(self.lvmd[vgName][lvName])
         lv_attr = real_lvm.LV_ATTR(**lv_md['attr'])
         lv_md['attr'] = lv_attr
@@ -210,6 +241,7 @@ class FakeLVM(object):
 
 
 _fqpvname = real_lvm._fqpvname
+_normalizeargs = real_lvm._normalizeargs
 
 
 def fake_lvm_uuid():

@@ -52,6 +52,10 @@ def get_random_devices(count=NR_PVS):
             for _ in range(count)]
 
 
+def get_uuid_list(count):
+    return [str(uuid.uuid4()) for _ in range(count)]
+
+
 def make_vg(fake_lvm, manifest, devices=None):
     vg_name = manifest.sdUUID
     if devices is None:
