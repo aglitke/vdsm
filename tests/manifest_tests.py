@@ -19,13 +19,15 @@
 
 import os
 import uuid
+from contextlib import contextmanager
 
 from testlib import VdsmTestCase, namedTemporaryDir, make_file
 from monkeypatch import MonkeyPatchScope
 from storagefakelib import FakeLVM
 from storagetestlib import (make_filesd_manifest, make_blocksd_manifest,
                             make_file_volume, make_vg, get_random_devices,
-                            FakeMetadata, get_uuid_list)
+                            FakeMetadata, get_uuid_list, create_volume_tree,
+                            create_lv_tree)
 
 from storage import sd, blockSD, fileVolume, blockVolume, multipath
 from storage import storage_exception as se
@@ -136,6 +138,89 @@ class FileManifestTests(VdsmTestCase):
             dirname, basename = os.path.split(imagepath)
             deldir = os.path.join(dirname, sd.REMOVED_IMAGE_PREFIX + basename)
             self.assertTrue(os.path.exists(deldir))
+
+    def test_getallimages(self):
+        template_volume, regular_volume = get_uuid_list(2)
+        template_image, regular_image = get_uuid_list(2)
+        vols = {template_volume: (regular_image, template_image),
+                regular_volume: (regular_image,)}
+        with namedTemporaryDir() as tmpdir:
+            pooluuid = str(uuid.uuid4())
+            pooldir = os.path.join(tmpdir, pooluuid)
+            metadata = FakeMetadata()
+            manifest = make_filesd_manifest(pooldir, metadata)
+            metadata[sd.DMDK_POOLS] = [pooluuid]
+
+            create_volume_tree(manifest, vols)
+            with MonkeyPatchScope([(sd, 'storage_repository', tmpdir)]):
+                self.assertEquals({regular_image, template_image},
+                                  manifest.getAllImages())
+
+    def test_getallimages_reject_file(self):
+        with namedTemporaryDir() as tmpdir:
+            pooluuid = str(uuid.uuid4())
+            pooldir = os.path.join(tmpdir, pooluuid)
+            metadata = FakeMetadata()
+            manifest = make_filesd_manifest(pooldir, metadata)
+            metadata[sd.DMDK_POOLS] = [pooluuid]
+
+            imguuid = str(uuid.uuid4())
+            imagepath = manifest.getImagePath(imguuid)
+            os.makedirs(os.path.dirname(imagepath))
+            with open(imagepath, 'w') as f:
+                f.truncate(0)
+        self.assertEquals(set(), manifest.getAllImages())
+
+    def test_getallimages_reject_non_uuid(self):
+        with namedTemporaryDir() as tmpdir:
+            pooluuid = str(uuid.uuid4())
+            pooldir = os.path.join(tmpdir, pooluuid)
+            metadata = FakeMetadata()
+            manifest = make_filesd_manifest(pooldir, metadata)
+            metadata[sd.DMDK_POOLS] = [pooluuid]
+
+            badimg = 'not-an-image'
+            imagepath = manifest.getImagePath(badimg)
+            os.makedirs(imagepath)
+        self.assertEquals(set(), manifest.getAllImages())
+
+    def test_getallimages_empty_dir(self):
+        with namedTemporaryDir() as tmpdir:
+            pooluuid = str(uuid.uuid4())
+            pooldir = os.path.join(tmpdir, pooluuid)
+            metadata = FakeMetadata()
+            manifest = make_filesd_manifest(pooldir, metadata)
+            metadata[sd.DMDK_POOLS] = [pooluuid]
+
+            imguuid = str(uuid.uuid4())
+            imagepath = manifest.getImagePath(imguuid)
+            os.makedirs(imagepath)
+        self.assertEquals(set(), manifest.getAllImages())
+
+    def test_getallvolumes(self):
+        template_volume, regular_volume = get_uuid_list(2)
+        template_image, regular_image = get_uuid_list(2)
+        vols = {template_volume: (regular_image, template_image),
+                regular_volume: (regular_image,)}
+        with namedTemporaryDir() as tmpdir:
+            pooluuid = str(uuid.uuid4())
+            pooldir = os.path.join(tmpdir, pooluuid)
+            metadata = FakeMetadata()
+            manifest = make_filesd_manifest(pooldir, metadata)
+            metadata[sd.DMDK_POOLS] = [pooluuid]
+
+            create_volume_tree(manifest, vols)
+            with MonkeyPatchScope([(sd, 'storage_repository', tmpdir)]):
+                allVols = manifest.getAllVolumes()
+
+                # The template image must always come first
+                images, parent = allVols[template_volume]
+                self.assertEquals((template_image, regular_image), images)
+                self.assertEquals(sd.BLANK_UUID, parent)
+
+                images, parent = allVols[regular_volume]
+                self.assertEquals((regular_image,), images)
+                self.assertEquals(None, parent)
 
 
 class BlockManifestTests(VdsmTestCase):
@@ -437,6 +522,100 @@ class BlockManifestTests(VdsmTestCase):
                 lvs = lvm.getLV(vg_name)
                 self.assertEquals(1, len(lvs))
                 self.assertEquals(sd.METADATA, lvs[0].name)
+
+    @contextmanager
+    def volume_layout(self, vols):
+        with namedTemporaryDir() as tmpdir:
+            lvm = FakeLVM(tmpdir)
+            with MonkeyPatchScope([(blockSD, 'lvm', lvm)]):
+                manifest = make_blocksd_manifest()
+                vg_name = make_vg(lvm, manifest)
+                create_lv_tree(lvm, vg_name, vols)
+                yield manifest
+
+    def test_getallimages(self):
+        parent_vol, child_vol = get_uuid_list(2)
+        template_image, regular_image = get_uuid_list(2)
+        vols = {parent_vol: {'image': template_image, 'parent': sd.BLANK_UUID},
+                child_vol: {'image': regular_image, 'parent': parent_vol}}
+        with self.volume_layout(vols) as manifest:
+            self.assertEquals({template_image, regular_image},
+                              manifest.getAllImages())
+
+    def test_getallvolumes(self):
+        template_volume, first_volume, second_volume = get_uuid_list(3)
+        template_image, regular_image = get_uuid_list(2)
+        vols = {template_volume: {
+                'image': template_image,
+                'parent': sd.BLANK_UUID},
+                first_volume: {
+                'image': regular_image,
+                'parent': template_volume},
+                second_volume: {
+                'image': regular_image,
+                'parent': first_volume}}
+        with self.volume_layout(vols) as manifest:
+            allvols = manifest.getAllVolumes()
+            self.assertEquals(set(vols.keys()), set(allvols.keys()))
+
+            # The template image must always come first
+            images = [template_image, regular_image]
+            self.assertEquals(images, allvols[template_volume].imgs)
+            self.assertEquals(sd.BLANK_UUID,
+                              allvols[template_volume].parent)
+
+            self.assertEquals([regular_image], allvols[first_volume].imgs)
+            self.assertEquals(template_volume,
+                              allvols[first_volume].parent)
+            self.assertEquals([regular_image], allvols[second_volume].imgs)
+            self.assertEquals(first_volume,
+                              allvols[second_volume].parent)
+
+    def test_getallvolumes_removed_template_image(self):
+        vol_id, img_id = get_uuid_list(2)
+        removed_img_id = sd.REMOVED_IMAGE_PREFIX + img_id
+        vols = {vol_id: {'image': removed_img_id, 'parent': sd.BLANK_UUID}}
+        with self.volume_layout(vols) as manifest:
+            vols, remnants = manifest.getAllVolumesImages()
+            self.assertEquals(0, len(vols))
+            self.assertIn(vol_id, remnants)
+
+    def test_getallvolumes_removed_volume(self):
+        vol_id, img_id = get_uuid_list(2)
+        removed_vol_id = sd.REMOVED_IMAGE_PREFIX + vol_id
+        vols = {removed_vol_id: {'image': img_id, 'parent': sd.BLANK_UUID}}
+        with self.volume_layout(vols) as manifest:
+            vols, remnants = manifest.getAllVolumesImages()
+            self.assertEquals(0, len(vols))
+            self.assertIn(removed_vol_id, remnants)
+
+    def test_getallvolumes_image_with_removed_volumes(self):
+        vol_a_id, vol_b_id, img_id = get_uuid_list(3)
+        removed_vol_id = sd.REMOVED_IMAGE_PREFIX + vol_b_id
+        vols = {vol_a_id: {'image': img_id, 'parent': sd.BLANK_UUID},
+                removed_vol_id: {'image': img_id, 'parent': vol_a_id}}
+        with self.volume_layout(vols) as manifest:
+            vols, remnants = manifest.getAllVolumesImages()
+            self.assertIn(vol_a_id, vols)
+            self.assertIn(removed_vol_id, remnants)
+
+    def test_getallvolumes_ignore_missing_tags(self):
+        vol_a_id, vol_b_id, img_id = get_uuid_list(3)
+        vols = {vol_a_id: {'image': img_id},
+                vol_b_id: {'parent': sd.BLANK_UUID}}
+        with self.volume_layout(vols) as manifest:
+                allvols = manifest.getAllVolumes()
+                self.assertNotIn(vol_a_id, allvols)
+                self.assertNotIn(vol_b_id, allvols)
+
+    def test_getallvolumes_broken_image(self):
+        vol_id, img_id, bad_vol_id = get_uuid_list(3)
+        vols = {vol_id: {'image': img_id, 'parent': bad_vol_id}}
+        with self.volume_layout(vols) as manifest:
+                # This doesn't raise an error, just prints a warning to logs
+                allvols = manifest.getAllVolumes()
+                self.assertNotIn(bad_vol_id, allvols)
+                self.assertEquals(bad_vol_id, allvols[vol_id].parent)
 
 
 def name_to_guid(name):

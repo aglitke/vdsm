@@ -30,10 +30,7 @@ from storage import fileSD
 from storage import sd
 
 
-class TestingFileStorageDomain(fileSD.FileStorageDomain):
-
-    stat = None  # Accessed in __del__
-
+class TestingFileSDManifest(fileSD.FileStorageDomainManifest):
     def __init__(self, uuid, mountpoint, oop):
         self._uuid = uuid
         self._mountpoint = mountpoint
@@ -75,7 +72,7 @@ class GetAllVolumesTests(TestCaseBase):
 
     def test_no_volumes(self):
         oop = FakeOOP(FakeGlob([]))
-        dom = TestingFileStorageDomain(self.SD_UUID, self.MOUNTPOINT, oop)
+        dom = TestingFileSDManifest(self.SD_UUID, self.MOUNTPOINT, oop)
         res = dom.getAllVolumes()
         self.assertEqual(res, {})
 
@@ -88,7 +85,7 @@ class GetAllVolumesTests(TestCaseBase):
             os.path.join(self.IMAGES_DIR, "image-2", "volume-5.meta"),
             os.path.join(self.IMAGES_DIR, "image-3", "volume-6.meta"),
         ]))
-        dom = TestingFileStorageDomain(self.SD_UUID, self.MOUNTPOINT, oop)
+        dom = TestingFileSDManifest(self.SD_UUID, self.MOUNTPOINT, oop)
         res = dom.getAllVolumes()
 
         # These volumes should have parent uuid, but the implementation does
@@ -112,7 +109,7 @@ class GetAllVolumesTests(TestCaseBase):
             os.path.join(self.IMAGES_DIR, "image-2", "volume-4.meta"),
             os.path.join(self.IMAGES_DIR, "image-3", "volume-5.meta"),
         ]))
-        dom = TestingFileStorageDomain(self.SD_UUID, self.MOUNTPOINT, oop)
+        dom = TestingFileSDManifest(self.SD_UUID, self.MOUNTPOINT, oop)
         res = dom.getAllVolumes()
 
         self.assertEqual(len(res), 5)
@@ -154,7 +151,7 @@ class GetAllVolumesTests(TestCaseBase):
             files.append(new_volume)
 
         oop = FakeOOP(FakeGlob(files))
-        dom = TestingFileStorageDomain(self.SD_UUID, self.MOUNTPOINT, oop)
+        dom = TestingFileSDManifest(self.SD_UUID, self.MOUNTPOINT, oop)
 
         start = time.time()
         dom.getAllVolumes()

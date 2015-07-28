@@ -22,8 +22,7 @@ from contextlib import contextmanager
 
 from testlib import make_file
 
-from storage import sd, blockSD, fileSD
-
+from storage import sd, blockSD, fileSD, blockVolume
 
 NR_PVS = 2       # The number of fake PVs we use to make a fake VG by default
 MDSIZE = 524288  # The size (in bytes) of fake metadata files
@@ -97,3 +96,21 @@ def make_file_volume(domaindir, size, imguuid=None, voluuid=None):
     for mdfile in mdfiles:
         make_file(mdfile)
     return imguuid, voluuid
+
+
+def create_volume_tree(manifest, spec):
+    for voluuid, imguuids in spec.items():
+        for imguuid in imguuids:
+            make_file_volume(manifest.domaindir, 0, imguuid, voluuid)
+
+
+def create_lv_tree(fakelvm, vg_name, spec):
+    for lv_name, lv_info in spec.items():
+        size = lv_info.get('size', 0)
+        fakelvm.createLV(vg_name, lv_name, size)
+        if 'parent' in lv_info:
+            fakelvm.addtag(vg_name, lv_name,
+                           blockVolume.TAG_PREFIX_PARENT + lv_info['parent'])
+        if 'image' in lv_info:
+            fakelvm.addtag(vg_name, lv_name,
+                           blockVolume.TAG_PREFIX_IMAGE + lv_info['image'])
