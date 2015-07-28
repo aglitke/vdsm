@@ -115,3 +115,13 @@ def create_lv_tree(fakelvm, vg_name, spec):
         if 'image' in lv_info:
             fakelvm.addtag(vg_name, lv_name,
                            blockVolume.TAG_PREFIX_IMAGE + lv_info['image'])
+
+
+def spoof_domain_metadata(manifest, domain_version, domain_class):
+    # We need to spoof the SD metadata because VolumeMetadata.validate()
+    # will create its own StorageDomainManifest object to check if this
+    # volume resides on an ISO domain.
+    with open(manifest.metafile, "w") as f:
+        f.write("{0}={1}\n".format(sd.DMDK_CLASS,
+                                   sd.DOMAIN_CLASSES[domain_class]))
+        f.write("{0}={1}\n".format(sd.DMDK_VERSION, domain_version))
