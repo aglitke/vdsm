@@ -23,6 +23,7 @@ import os
 from testlib import VdsmTestCase, namedTemporaryDir
 
 from storage import sd, image
+from storage.sdmprotect import sdm_verb
 
 
 class ImageManifestTests(VdsmTestCase):
@@ -33,3 +34,14 @@ class ImageManifestTests(VdsmTestCase):
             manifest = image.ImageManifest(tmpdir)
             expected = os.path.join(tmpdir, sduuid, sd.DOMAIN_IMAGES, imguuid)
             self.assertEquals(expected, manifest.getImageDir(sduuid, imguuid))
+
+    @sdm_verb
+    def test_create_image_dir(self):
+        with namedTemporaryDir() as tmpdir:
+            sduuid = str(uuid.uuid4())
+            imguuid = str(uuid.uuid4())
+            manifest = image.ImageManifest(tmpdir)
+            os.makedirs(os.path.join(tmpdir, sduuid, sd.DOMAIN_IMAGES))
+            manifest.create_image_dir(sduuid, imguuid)
+            self.assertTrue(os.path.exists(manifest.getImageDir(sduuid,
+                                                                imguuid)))
