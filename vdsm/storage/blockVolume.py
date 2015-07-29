@@ -184,7 +184,8 @@ class BlockVolumeMetadata(volume.VolumeMetadata):
         """
         lvs = lvm.lvsByTag(self.sdUUID,
                            "%s%s" % (TAG_PREFIX_PARENT, self.volUUID))
-        return tuple(lv.name for lv in lvs)
+
+        return tuple(lv.name for lv in lvs if TAG_VOL_GARBAGE not in lv.tags)
 
     def getImage(self):
         """
