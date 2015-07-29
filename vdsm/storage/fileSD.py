@@ -329,6 +329,20 @@ class FileStorageDomainManifest(sd.StorageDomainManifest):
             return leasePath, fileVolume.LEASE_FILEOFFSET
         return None, None
 
+    def imageGarbageCollector(self):
+        """
+        Image Garbage Collector
+        remove the remnants of the removed images (they could be left sometimes
+        (on NFS mostly) due to lazy file removal
+        """
+        removedPattern = os.path.join(self.domaindir, sd.DOMAIN_IMAGES,
+                                      sd.REMOVED_IMAGE_PREFIX + '*')
+        removedImages = self.oop.glob.glob(removedPattern)
+        self.log.debug("Removing remnants of deleted images %s" %
+                       removedImages)
+        for imageDir in removedImages:
+            self.oop.fileUtils.cleanupdir(imageDir)
+
 
 class FileStorageDomain(sd.StorageDomain):
     manifestClass = FileStorageDomainManifest
@@ -640,20 +654,6 @@ class FileStorageDomain(sd.StorageDomain):
                 mount.getMountFromTarget(self.mountpoint).umount()
                 raise se.FileStorageDomainStaleNFSHandle()
             raise
-
-    def imageGarbageCollector(self):
-        """
-        Image Garbage Collector
-        remove the remnants of the removed images (they could be left sometimes
-        (on NFS mostly) due to lazy file removal
-        """
-        removedPattern = os.path.join(self.domaindir, sd.DOMAIN_IMAGES,
-                                      sd.REMOVED_IMAGE_PREFIX + '*')
-        removedImages = self.oop.glob.glob(removedPattern)
-        self.log.debug("Removing remnants of deleted images %s" %
-                       removedImages)
-        for imageDir in removedImages:
-            self.oop.fileUtils.cleanupdir(imageDir)
 
     def templateRelink(self, imgUUID, volUUID):
         """

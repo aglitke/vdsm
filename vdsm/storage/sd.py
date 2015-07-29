@@ -489,6 +489,14 @@ class StorageDomainManifest(object):
         if preallocate is not None and preallocate not in volume.VOL_TYPE:
             raise se.IncorrectType(preallocate)
 
+    def imageGarbageCollector(self):
+        """
+        Image Garbage Collector
+        remove the remnants of the removed images (they could be left sometimes
+        (on NFS mostly) due to lazy file removal
+        """
+        pass
+
 
 class StorageDomain(object):
     log = logging.getLogger("Storage.StorageDomain")
@@ -978,9 +986,4 @@ class StorageDomain(object):
         return self._manifest.isData()
 
     def imageGarbageCollector(self):
-        """
-        Image Garbage Collector
-        remove the remnants of the removed images (they could be left sometimes
-        (on NFS mostly) due to lazy file removal
-        """
-        pass
+        self._manifest.imageGarbageCollector()
