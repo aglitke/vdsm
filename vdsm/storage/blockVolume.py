@@ -283,15 +283,16 @@ class BlockVolumeMetadata(volume.VolumeMetadata):
         # tags
         self.setMetaParam(volume.IMAGE, imgUUID)
 
-    def removeMetadata(self, metaId):
-        """
-        Just wipe meta.
-        """
+    @classmethod
+    def clearMetadataSlot(cls, metaId):
         try:
-            self._putMetadata(metaId, {"NONE": "#" * (sd.METASIZE - 10)})
+            cls._putMetadata(metaId, {"NONE": "#" * (sd.METASIZE - 10)})
         except Exception as e:
-            self.log.error(e, exc_info=True)
+            cls.log.exception(e)
             raise se.VolumeMetadataWriteError("%s: %s" % (metaId, e))
+
+    def removeMetadata(self, metaId):
+        self.clearMetadataSlot(metaId)
 
     @classmethod
     def newVolumeLease(cls, metaId, sdUUID, volUUID):
