@@ -328,7 +328,7 @@ class BlockVolumeMetadata(volume.VolumeMetadata):
         (template)
         """
         lvs = lvm.lvsByTag(sdUUID, "%s%s" % (TAG_PREFIX_IMAGE, imgUUID))
-        return [lv.name for lv in lvs]
+        return [lv.name for lv in lvs if TAG_VOL_GARBAGE not in lv.tags]
 
     @logskip("ResourceManager")
     def llPrepare(self, rw=False, setrw=False):
