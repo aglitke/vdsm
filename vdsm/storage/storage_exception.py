@@ -1737,3 +1737,8 @@ class ResourceAcqusitionFailed(GeneralException):
     code = 855
     message = ("Could not acquire resource. "
                "Probably resource factory threw an exception.")
+
+
+class InjectedFailure(GeneralException):
+    code = 999
+    message = "Injected Failure"

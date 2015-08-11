@@ -1024,3 +1024,8 @@ def walk(top, topdown=True, onerror=None, followlinks=False, blacklist=()):
 def deprecated(f):
     """Used to mark exported methods as deprecated"""
     return f
+
+
+def maybe_fail(chance=0.1):
+    if chance != 0 and random.random() <= chance:
+        raise se.InjectedFailure()
