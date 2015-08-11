@@ -31,6 +31,8 @@ import volume
 
 from vdsm import qemuimg
 
+from misc import maybe_fail
+
 log = logging.getLogger('sdm')
 
 rmanager = rm.ResourceManager.getInstance()
@@ -43,40 +45,58 @@ def get_domain_host_id(sdUUID):
 
 def create_volume_container(dom_manifest, img_id, size, vol_format, disk_type,
                             vol_id, desc, src_img_id, src_vol_id):
+    maybe_fail(0.005)
     hostId = get_domain_host_id(dom_manifest.sdUUID)
+    maybe_fail(0.02)
     dom_manifest.acquireDomainLock(hostId)
     imageResourcesNamespace = sd.getNamespace(dom_manifest.sdUUID,
                                               IMAGE_NAMESPACE)
     try:
+        maybe_fail(0.02)
         with rmanager.acquireResource(imageResourcesNamespace, img_id,
                                       rm.LockType.exclusive):
+            maybe_fail(0.02)
             image_manifest = ImageManifest(dom_manifest.getRepoPath())
+            maybe_fail(0.02)
             img_path = image_manifest.create_image_dir(dom_manifest.sdUUID,
                                                        img_id)
+            maybe_fail(0.02)
             vol_parent_md = None
+            maybe_fail(0.02)
             if src_vol_id != volume.BLANK_UUID:
+                maybe_fail(0.02)
                 # When the src_img_id isn't specified we assume it's the same
                 # as img_id
                 if src_img_id == volume.BLANK_UUID:
+                    maybe_fail(0.02)
                     src_img_id = img_id
+                maybe_fail(0.02)
                 vol_parent_md = dom_manifest.produceVolume(src_img_id,
                                                            src_vol_id)
+                maybe_fail(0.02)
                 size = vol_parent_md.getSize()
+                maybe_fail(0.02)
 
             dom_manifest.create_volume_artifacts(img_id, vol_id, size,
                                                  vol_format,  disk_type,
                                                  desc, src_vol_id)
+            maybe_fail(0.02)
             if src_vol_id != volume.BLANK_UUID:
+                maybe_fail(0.02)
                 _prepare_volume_for_parenthood(vol_parent_md, src_img_id,
                                                src_vol_id, img_id, img_path)
+            maybe_fail(0.02)
 
             # TODO: get actual size from create_volume_artifacts retval
             size = volume.VolumeMetadata.adjust_new_volume_size(
                 dom_manifest, img_id, vol_id, size, vol_format)
+            maybe_fail(0.02)
 
             vol_path = os.path.join(img_path, vol_id)
+            maybe_fail(0.02)
             _initialize_volume_contents(img_id, vol_id, vol_path, vol_format,
                                         size, vol_parent_md)
+            maybe_fail(0.02)
             dom_manifest.commit_volume_artifacts(img_path, img_id, vol_id)
     finally:
         dom_manifest.releaseDomainLock()
