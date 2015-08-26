@@ -40,16 +40,14 @@ import libvirt
 
 from vdsm.constants import P_VDSM_RUN
 from vdsm.define import errCode, doneCode
-from vdsm import libvirtconnection, response
+from vdsm import jobs, libvirtconnection, response
 from vdsm.infra import zombiereaper
 from vdsm.utils import traceback, CommandPath, execCmd, NICENESS, IOCLASS
 
 import caps
 
 
-_lock = threading.Lock()
-_jobs = {}
-
+_V2V_JOB_TYPE = 'v2v'
 _V2V_DIR = os.path.join(P_VDSM_RUN, 'v2v')
 _VIRT_V2V = CommandPath('virt-v2v', '/usr/bin/virt-v2v')
 _OVF_RESOURCE_CPU = 3
@@ -67,27 +65,17 @@ ImportProgress = namedtuple('ImportProgress',
 DiskProgress = namedtuple('DiskProgress', ['progress'])
 
 
-class STATUS:
+class STATUS(jobs.STATUS):
     '''
     STARTING: request granted and starting the import process
     COPYING_DISK: copying disk in progress
-    ABORTED: user initiated aborted
-    FAILED: error during import process
-    DONE: convert process successfully finished
     '''
     STARTING = 'starting'
     COPYING_DISK = 'copying_disk'
-    ABORTED = 'aborted'
-    FAILED = 'error'
-    DONE = 'done'
 
 
 class V2VError(Exception):
     ''' Base class for v2v errors '''
-
-
-class ClientError(Exception):
-    ''' Base class for client error '''
 
 
 class InvalidVMConfiguration(ValueError):
@@ -98,23 +86,8 @@ class OutputParserError(V2VError):
     ''' Error while parsing virt-v2v output '''
 
 
-class JobExistsError(ClientError):
-    ''' Job already exists in _jobs collection '''
-    err_name = 'JobExistsError'
-
-
-class VolumeError(ClientError):
+class VolumeError(jobs.ClientError):
     ''' Error preparing volume '''
-
-
-class NoSuchJob(ClientError):
-    ''' Job not exists in _jobs collection '''
-    err_name = 'NoSuchJob'
-
-
-class JobNotDone(ClientError):
-    ''' Import process still in progress '''
-    err_name = 'JobNotDone'
 
 
 class NoSuchOvf(V2VError):
@@ -126,7 +99,7 @@ class V2VProcessError(V2VError):
     ''' virt-v2v process had error in execution '''
 
 
-class InvalidInputError(ClientError):
+class InvalidInputError(jobs.ClientError):
     ''' Invalid input received '''
 
 
@@ -177,14 +150,14 @@ def get_external_vms(uri, username, password):
 def convert_external_vm(uri, username, password, vminfo, job_id, irs):
     job = ImportVm.from_libvirt(uri, username, password, vminfo, job_id, irs)
     job.start()
-    _add_job(job_id, job)
+    jobs.add(job)
     return {'status': doneCode}
 
 
 def convert_ova(ova_path, vminfo, job_id, irs):
     job = ImportVm.from_ova(ova_path, vminfo, job_id, irs)
     job.start()
-    _add_job(job_id, job)
+    jobs.add(job)
     return response.success()
 
 
@@ -206,12 +179,12 @@ def get_ova_info(ova_path):
 
 def get_converted_vm(job_id):
     try:
-        job = _get_job(job_id)
-        _validate_job_done(job)
+        job = jobs.get(job_id)
+        job.validate_done()
         ovf = _read_ovf(job_id)
-    except ClientError as e:
+    except jobs.ClientError as e:
         logging.info('Converted VM error %s', e)
-        return errCode[e.err_name]
+        return errCode[e.name]
     except V2VError as e:
         logging.error('Converted VM error %s', e)
         return errCode[e.err_name]
@@ -219,68 +192,15 @@ def get_converted_vm(job_id):
 
 
 def delete_job(job_id):
-    try:
-        job = _get_job(job_id)
-        _validate_job_finished(job)
-        _remove_job(job_id)
-    except ClientError as e:
-        logging.info('Cannot delete job, error: %s', e)
-        return errCode[e.err_name]
-    return {'status': doneCode}
+    return jobs.delete(job_id)
 
 
 def abort_job(job_id):
-    try:
-        job = _get_job(job_id)
-        job.abort()
-    except ClientError as e:
-        logging.info('Cannot abort job, error: %s', e)
-        return errCode[e.err_name]
-    return {'status': doneCode}
+    return jobs.abort(job_id)
 
 
 def get_jobs_status():
-    ret = {}
-    with _lock:
-        items = tuple(_jobs.items())
-    for job_id, job in items:
-        ret[job_id] = {
-            'status': job.status,
-            'description': job.description,
-            'progress': job.progress
-        }
-    return ret
-
-
-def _add_job(job_id, job):
-    with _lock:
-        if job_id in _jobs:
-            raise JobExistsError("Job %r exists" % job_id)
-        _jobs[job_id] = job
-
-
-def _get_job(job_id):
-    with _lock:
-        if job_id not in _jobs:
-            raise NoSuchJob("No such job %r" % job_id)
-        return _jobs[job_id]
-
-
-def _remove_job(job_id):
-    with _lock:
-        if job_id not in _jobs:
-            raise NoSuchJob("No such job %r" % job_id)
-        del _jobs[job_id]
-
-
-def _validate_job_done(job):
-    if job.status != STATUS.DONE:
-        raise JobNotDone("Job %r is %s" % (job.id, job.status))
-
-
-def _validate_job_finished(job):
-    if job.status not in (STATUS.DONE, STATUS.FAILED, STATUS.ABORTED):
-        raise JobNotDone("Job %r is %s" % (job.id, job.status))
+    return jobs.info(_V2V_JOB_TYPE)
 
 
 def _read_ovf(job_id):
@@ -319,7 +239,8 @@ def password_file(job_id, file_name, password):
                               job_id, file_name)
 
 
-class ImportVm(object):
+class ImportVm(jobs.Job):
+    _JOB_TYPE = _V2V_JOB_TYPE
     TERM_DELAY = 30
     PROC_WAIT_TIMEOUT = 30
 
@@ -327,12 +248,11 @@ class ImportVm(object):
         '''
         do not use directly, use a factory method instead!
         '''
+        super(ImportVm, self).__init__(job_id)
         self._vminfo = vminfo
-        self._id = job_id
         self._irs = irs
 
         self._status = STATUS.STARTING
-        self._description = ''
         self._disk_progress = 0
         self._disk_count = 1
         self._current_disk = 1
@@ -373,18 +293,6 @@ class ImportVm(object):
         t = threading.Thread(target=self._run_command)
         t.daemon = True
         t.start()
-
-    @property
-    def id(self):
-        return self._id
-
-    @property
-    def status(self):
-        return self._status
-
-    @property
-    def description(self):
-        return self._description
 
     @property
     def progress(self):
@@ -514,11 +422,6 @@ class ImportVm(object):
                get_storage_domain_path(self._prepared_volumes[0]['path'])]
         cmd.extend(self._generate_disk_parameters())
         return cmd
-
-    def abort(self):
-        self._status = STATUS.ABORTED
-        logging.info('Job %r aborting...', self._id)
-        self._abort()
 
     def _abort(self):
         self._aborted = True
