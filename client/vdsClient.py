@@ -2032,6 +2032,20 @@ class service:
         res = self.s.unregisterSecrets(args)
         return res['status']['code'], res['status']['message']
 
+    def copyVolumeData(self, args):
+        if len(args) != 3:
+            raise ValueError('Wrong number of arguments')
+
+        srcImage, dstImage, collapse = args
+        srcImageVal = ast.literal_eval(srcImage)
+        dstImageVal = ast.literal_eval(dstImage)
+        collapseVal = utils.tobool(collapse)
+        status = self.s.copyData(srcImageVal, dstImageVal, collapseVal)
+        if status['status']['code'] == 0:
+            return 0, ''
+        else:
+            return status['status']['code'], status['status']['message']
+
 
 if __name__ == '__main__':
     if _glusterEnabled:
@@ -3001,6 +3015,11 @@ if __name__ == '__main__':
             '    vdsClient -s 0 unregisterSecrets \ ',
             '        3a27b133-abb2-4302-8891-bd0a4032866f \ ',
             '        2638b449-e076-474e-8e72-0a3130cd8f7b',
+            )),
+        'copyVolumeData': (
+            serv.copyVolumeData, (
+                '<srcImage> <dstImage> <collapse>',
+                'Copy the date from one volume into another.'
             )),
     }
     if _glusterEnabled:

@@ -4498,6 +4498,7 @@
 {'command': {'class': 'Host', 'name': 'setSafeNetworkConfig'}}
 
 
+
 ## Category: @ConnectionRefs ##################################################
 ##
 # @ConnectionRefs:
@@ -8832,3 +8833,64 @@
 ##
 {'command': {'class': 'SDM', 'name': 'garbageCollectStorageDomain'},
  'data': {'storagedomainID': 'UUID'}}
+
+##
+# @VdsmVolumeSpec:
+#
+# Describes a volume that is part of a Vdsm image.
+#
+# @sdUUID:   The UUID of the storage domain containing the volume
+#
+# @imgUUID:  The UUID of the image containing the volume
+#
+# @volUUID:  The UUID of the volume
+#
+# Since: 4.18.0
+##
+{'type': 'VdsmVolumeSpec',
+ 'data': {'sdUUID': 'UUID', 'imgUUID': 'UUID', 'volUUID': 'UUID'}}
+
+##
+# @VolumeSpecType:
+#
+# An enumeration of VolumeSpec types.
+#
+# @image:  The volume is a part of a vdsm image
+#
+# @http:   The volume is accessible via HTTP
+#
+# Since: 4.18.0
+##
+{'enum': 'VolumeSpecType', 'data': ['image', 'http']}
+
+##
+# @VolumeSpec:
+#
+# A Discriminated record to represent a volume endpoint.
+#
+# @type:  The specific type of volume being described
+#
+# Since: 4.18.0
+##
+{'type': 'VolumeSpec'
+ 'data': {'type': 'VolumeSpecType'},
+ 'union': ['VdsmVolumeSpec', 'ImageSharingMethodArgsHttp']}
+
+##
+# @SDM.copyData:
+#
+# Copy data from a source location to a destination.
+#
+# @srcImage:  Description of the source image
+#
+# @dstImage:  Description of the destination image
+#
+# @collapse:  If True, collapse data from a source qcow chain to the destination.
+#             If False, make a literal copy of the source.
+#
+# Since: 4.18.0
+##
+{'command': {'class': 'SDM', 'name': 'copyData'},
+ 'data': {'srcImage': 'VolumeSpec', 'dstImage': 'VolumeSpec',
+          'collapse': 'bool'}}
+

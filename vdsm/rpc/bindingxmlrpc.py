@@ -1059,6 +1059,10 @@ class BindingXMLRPC(object):
     def storageServerConnectionRefsStatuses(self):
         return API.ConnectionRefs().statuses()
 
+    def copyData(self, srcImage, dstImage, collapse):
+        sdm = API.SDM()
+        return sdm.copyData(srcImage, dstImage, collapse)
+
     def getGlobalMethods(self):
         return ((self.vmDestroy, 'destroy'),
                 (self.vmCreate, 'create'),
@@ -1221,6 +1225,8 @@ class BindingXMLRPC(object):
                  'storageServer_ConnectionRefs_release'),
                 (self.storageServerConnectionRefsStatuses,
                  'storageServer_ConnectionRefs_statuses'),
+                (self.volumeCreateContainer, 'createVolumeContainer'),
+                (self.copyData, 'copyData'),
                 (self.volumeCreateContainer, 'createVolumeContainer'),
                 (self.domainGarbageCollect, 'garbageCollectStorageDomain'))
 

@@ -20,13 +20,18 @@
 
 import logging
 import os
+from contextlib import contextmanager
+import threading
+import time
 
 from clientIF import clientIF as cif
+import jobs
 from image import ImageManifest
 import resourceManager as rm
 from resourceFactories import IMAGE_NAMESPACE
 import sd
 import storage_exception as se
+import image
 import volume
 
 from vdsm import qemuimg
@@ -311,3 +316,115 @@ def garbage_collect_volumes(dom_manifest, img_filter=None, vol_filter=None):
 
             dom_manifest.garbage_collect_volume(gcvol.image, gcvol.name,
                                                 gcvol.meta_id, gcvol.parent)
+
+
+class CopyDataStatus(jobs.STATUS):
+    '''
+    COPYING: Copying data
+    '''
+    COPYING = 'copying'
+
+
+class CopyDataJob(jobs.Job):
+    _JOB_TYPE = 'storage'
+    _LOG_INTERVAL = 60
+
+    def __init__(self, job_id, src_vol, src_res, dst_vol, dst_res, collapse):
+        super(CopyDataJob, self).__init__(job_id)
+        self._src_vol = src_vol
+        self._dst_vol = dst_vol
+        self._src_res = src_res
+        self._dst_res = dst_res
+        self._collapse = collapse
+        self._progress = 0
+
+    def progress(self):
+        return self._progress
+
+    def run(self):
+        self._prepare()
+        self._copy()
+        self._cleanup()
+
+    def _prepare(self):
+        pass
+
+    def _copy(self):
+        pass
+
+    def _cleanup(self):
+        if self.status == jobs.STATUS.DONE:
+            self._dst_vol.setLegality(volume.LEGAL_VOL)
+        self._dst_vol.teardown(self._dst_vol.sdUUID, self._dst_vol.volUUID)
+        self._src_vol.teardown(self._src_vol.sdUUID, self._src_vol.volUUID)
+        self._dst_vol.releaseVolumeLease()
+        self._dst_res.release()
+        self._src_vol.releaseVolumeLease()
+        self._src_res.release()
+
+
+@contextmanager
+def _copy_data_secured_volume(dom_manifest, img_id, vol_id, lock_type):
+    """
+    Secure a volume for use by copy_data.  The image resource must be locked
+    and the volume lease taken.  These will be held for the CopyDataJob and
+    released only if there is an error while preparing.  Upon completion,
+    CopyDataJob will release these.
+    """
+    res_ns = sd.getNamespace(dom_manifest.sdUUID, IMAGE_NAMESPACE)
+    res = rmanager.acquireResource(res_ns, img_id, lock_type)
+    try:
+        dom_manifest.acquireVolumeLease(img_id, vol_id)
+        try:
+            yield dom_manifest.produceVolume(img_id, vol_id)
+        except:
+            log.exception("Releasing volume lease sd: %s img: %s vol: %s",
+                          dom_manifest.sdUUID, img_id, vol_id)
+            dom_manifest.releaseVolumeLease(img_id, vol_id)
+            raise
+    except:
+        log.exception("Releasing resource %s", res)
+        res.release()
+        raise
+
+
+def _copy_data_calc_extend_size():
+    return None
+
+
+def copy_data(src_manifest, src_img_id, src_vol_id,
+              dst_manifest, dst_img_id, dst_vol_id, collapse):
+    try:
+        with _copy_data_secured_volume(src_manifest, src_img_id, src_vol_id,
+                                       rm.LockType.shared) as src_vol:
+            with _copy_data_secured_volume(dst_manifest, dst_img_id,
+                                           dst_vol_id,
+                                           rm.LockType.exclusive) as dst_vol:
+                req_size = _copy_data_calc_extend_size()
+                if req_size:
+                    log.info("Extending target volume %s to size %i",
+                             dst_vol_id, req_size)
+                    host_id = get_domain_host_id(dst_manifest.sdUUID)
+                    dst_manifest.acquireDomainLock(host_id)
+                    try:
+                        # Requested size must be converted from bytes to MB
+                        dst_manifest.extendVolume(dst_vol_id, req_size >> 20)
+                    finally:
+                        dst_manifest.releaseDomainLock()
+
+                src_vol.prepare(rw=False, justme=only_vol)
+                try:
+                    dst_vol.prepare(rw=True, justme=True)
+                    try:
+                        dst_vol.setLegality(volume.ILLEGAL_VOL)
+
+                        # Start CopDataJob
+                    except:
+                        dst_vol.teardown(dst_manifest.sdUUID, dst_vol_id)
+                        raise
+                except:
+                    src_vol.teardown(src_manifest.sdUUID, src_vol_id)
+                    raise
+    except Exception:
+        log.exception("Copy image error")
+        raise se.CopyImageError()

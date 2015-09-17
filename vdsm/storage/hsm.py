@@ -3722,3 +3722,24 @@ class HSM(object):
         dom_manifest = sdCache.produce(sdUUID=sdUUID).get_manifest()
         vars.task.getSharedLock(STORAGE, sdUUID)
         return sdm.garbage_collect_storage_domain(dom_manifest)
+
+    @public
+    @sdm_verb
+    def copyData(self, src, dst, collapse):
+        if src.get('type') == dst.get('type') == 'image':
+            involved_domains = {src['sdUUID'], dst['sdUUID']}
+            for sd_id in involved_domains:
+                vars.task.getSharedLock(STORAGE, sd_id)
+            src_manifest = sdCache.produce(sdUUID=src['sdUUID'])
+            dst_manifest = sdCache.produce(sdUUID=dst['sdUUID'])
+            return sdm.copy_data(src_manifest, src['imgUUID'], src['volUUID'],
+                                 dst_manifest, dst['imgUUID'], dst['volUUID'],
+                                 collapse)
+        elif src.get('type') == 'http' and dst.get('type') == 'image':
+            raise se.MiscNotImplementedException("download not implemented")
+        elif src.get('type') == 'image' and dst.get('type') == 'http':
+            raise se.MiscNotImplementedException("upload not implemented")
+        else:
+            se.VolumeCopyError("Unsupported combination of image types: "
+                               "src:%s, dst:%s" % (src.get('type'),
+                                                   dst.get('type')))

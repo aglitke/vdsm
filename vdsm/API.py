@@ -1892,3 +1892,6 @@ class SDM(APIBase):
 
     def garbageCollectStorageDomain(self, sdUUID):
         return self._irs.garbageCollectStorageDomain(sdUUID)
+
+    def copyData(self, srcImage, dstImage, collapse):
+        return self._cif.irs.copyData(srcImage, dstImage, collapse)
