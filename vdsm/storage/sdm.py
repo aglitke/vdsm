@@ -329,12 +329,17 @@ class CopyDataJob(jobs.Job):
     _JOB_TYPE = 'storage'
     _LOG_INTERVAL = 60
 
-    def __init__(self, job_id, src_vol, src_res, dst_vol, dst_res, collapse):
+    def __init__(self, job_id, src_manifest, src_img_id, src_vol_id,
+                 dst_manifest, dst_img_id, dst_vol_id, collapse):
         super(CopyDataJob, self).__init__(job_id)
-        self._src_vol = src_vol
-        self._dst_vol = dst_vol
-        self._src_res = src_res
-        self._dst_res = dst_res
+        self._src_manifest = src_manifest
+        self._src_img_id = src_img_id
+        self._src_vol_id = src_vol_id
+        self._src_vol = None
+        self._dst_manifest = dst_manifest
+        self._dst_img_id = dst_img_id
+        self._dst_vol_id = dst_vol_id
+        self._dst_vol = None
         self._collapse = collapse
         self._progress = 0
 
@@ -342,12 +347,12 @@ class CopyDataJob(jobs.Job):
         return self._progress
 
     def run(self):
-        self._prepare()
-        self._copy()
-        self._cleanup()
+        with self._prepare():
+            self._copy()
 
+    @contextmanager
     def _prepare(self):
-        pass
+        yield
 
     def _copy(self):
         pass
@@ -364,14 +369,15 @@ class CopyDataJob(jobs.Job):
 
 
 @contextmanager
-def _copy_data_secured_volume(dom_manifest, img_id, vol_id, lock_type):
+def secured_volume(dom_manifest, img_id, vol_id, exclusive):
     """
-    Secure a volume for use by copy_data.  The image resource must be locked
-    and the volume lease taken.  These will be held for the CopyDataJob and
-    released only if there is an error while preparing.  Upon completion,
-    CopyDataJob will release these.
+    Secure a volume for use in a data path operation.  The image resource must
+    be acquired first to prevent conflicting operations from being started by
+    this host.  Next, the volume lease is taken to reserve the volume for use
+    by this host.
     """
     res_ns = sd.getNamespace(dom_manifest.sdUUID, IMAGE_NAMESPACE)
+    lock_type = rm.LockType.exclusive if exclusive else rm.LockType.shared
     res = rmanager.acquireResource(res_ns, img_id, lock_type)
     try:
         dom_manifest.acquireVolumeLease(img_id, vol_id)
@@ -380,7 +386,6 @@ def _copy_data_secured_volume(dom_manifest, img_id, vol_id, lock_type):
         except:
             log.exception("Releasing volume lease sd: %s img: %s vol: %s",
                           dom_manifest.sdUUID, img_id, vol_id)
-            dom_manifest.releaseVolumeLease(img_id, vol_id)
             raise
     except:
         log.exception("Releasing resource %s", res)
