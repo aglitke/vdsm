@@ -148,6 +148,26 @@ class FakeLVM(object):
             raise se.MissingTagOnLogicalVolume("%s/%s" % (vg, lv), tag)
         lv_md['tags'] += (tag,)
 
+    def changeLVTags(self, vg, lv, delTags=(), addTags=()):
+        try:
+            lv_md = self.lvmd[(vg, lv)]
+        except KeyError:
+            raise se.LogicalVolumeReplaceTagError("LV %s does not exist",
+                                                  "%s/%s" % (vg, lv))
+
+        lvTags = set(lv_md['tags'])
+        delTags = set(delTags)
+        addTags = set(addTags)
+        if delTags & addTags:
+            raise se.LogicalVolumeReplaceTagError(
+                "Cannot add and delete the same tag lv: `%s` tags: `%s`" %
+                (lv, ", ".join(delTags.intersection(addTags))))
+
+        # Adding an existing tag or removing a nonexistent tag are ignored
+        lvTags |= addTags
+        lvTags -= delTags
+        lv_md['tags'] = tuple(lvTags)
+
     def lvPath(self, vgName, lvName):
         return os.path.join(self.root, "dev", vgName, lvName)
 
