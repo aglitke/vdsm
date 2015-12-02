@@ -30,6 +30,7 @@ from storage import blockSD, blockVolume
 from storage import lvm as real_lvm
 
 
+@expandPermutations
 class FakeLVMSimpleVGTests(VdsmTestCase):
     VG_NAME = '1ffead52-7363-4968-a8c7-3bc34504d452'
     DEVICES = ['360014054d75cb132d474c0eae9825766']
@@ -258,9 +259,14 @@ class FakeLVMSimpleVGTests(VdsmTestCase):
                               lvm.changeLVTags, self.VG_NAME, self.LV_NAME,
                               delTags=("FOO",), addTags=("FOO",))
 
-    def test_activatelv(self):
+    @permutations([
+        [LV_NAME],
+        [[LV_NAME]],
+    ])
+    def test_activatelv(self, lv_arg):
         """
-        Create an inactive LV and then activate it.
+        Create an inactive LV and then activate it.  Test that scalar and
+        array based values are handled properly.
 
         lvm.createLV('1ffead52-7363-4968-a8c7-3bc34504d452',
                      '54e3378a-b2f6-46ff-b2da-a9c82522a55e',
@@ -283,10 +289,11 @@ class FakeLVMSimpleVGTests(VdsmTestCase):
         with self.base_config() as lvm:
             lvm.createLV(self.VG_NAME, self.LV_NAME, str(self.LV_SIZE_MB),
                          activate=False)
-            lvm.activateLVs(self.VG_NAME, [self.LV_NAME])
-            lv = lvm.getLV(self.VG_NAME, self.LV_NAME)
-            self.assertTrue(lv.active)
-            self.assertEqual('a', lv.attr.state)
+            lvm.activateLVs(self.VG_NAME, lv_arg)
+            for lv_name in real_lvm._normalizeargs(lv_arg):
+                lv = lvm.getLV(self.VG_NAME, lv_name)
+                self.assertTrue(lv.active)
+                self.assertEqual('a', lv.attr.state)
 
 
 @expandPermutations

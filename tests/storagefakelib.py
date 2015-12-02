@@ -133,6 +133,7 @@ class FakeLVM(object):
         self.vgmd[vgName]['lv_count'] = str(lv_count)
 
     def activateLVs(self, vgName, lvNames):
+        lvNames = real_lvm._normalizeargs(lvNames)
         for lv in lvNames:
             try:
                 lv_md = self.lvmd[(vgName, lv)]
