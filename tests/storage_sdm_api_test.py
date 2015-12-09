@@ -21,11 +21,15 @@
 import uuid
 
 from testlib import VdsmTestCase
+from sdmtestlib import wait_for_job
 
+from vdsm import jobs
 from vdsm import exception
 from vdsm.storage import exception as se
 
+from storage.sdm.api import base
 from storage.sdm.api import types
+from storage.threadLocal import vars
 
 
 def _get_create_vol_info():
@@ -70,3 +74,46 @@ class TypesTests(VdsmTestCase):
         params = _get_create_vol_info()
         params['parent'] = {}
         self.assertIsNone(types.CreateVolumeInfo(params).parent)
+
+
+class ApiBaseTests(VdsmTestCase):
+
+    def run_job(self, job):
+        self.assertEqual(jobs.STATUS.PENDING, job.status)
+        self.assertIsNone(getattr(vars, 'job_id', None))
+        job.run()
+        wait_for_job(job)
+        self.assertIsNone(getattr(vars, 'job_id', None))
+
+    def test_states(self):
+        job = TestingJob()
+        self.run_job(job)
+        self.assertEqual(jobs.STATUS.DONE, job.status)
+
+    def test_default_exception(self):
+        message = "testing failure"
+        job = TestingJob(Exception(message))
+        self.run_job(job)
+        self.assertEqual(jobs.STATUS.FAILED, job.status)
+        self.assertIsInstance(job.error, exception.GeneralException)
+        self.assertIn(message, str(job.error))
+
+    def test_vdsm_exception(self):
+        job = TestingJob(exception.VdsmException())
+        self.run_job(job)
+        self.assertEqual(jobs.STATUS.FAILED, job.status)
+        self.assertIsInstance(job.error, exception.VdsmException)
+
+
+class TestingJob(base.Job):
+
+    def __init__(self, exception=None):
+        job_id = str(uuid.uuid4())
+        super(TestingJob, self).__init__(job_id, 'testing_job', 'host_id')
+        self.exception = exception
+
+    def _run(self):
+        assert(self.status == jobs.STATUS.RUNNING)
+        assert(vars.job_id == self.id)
+        if self.exception:
+            raise self.exception

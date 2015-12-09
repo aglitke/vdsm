@@ -140,6 +140,7 @@ test_modules = \
 	storageMonitorTests.py \
 	storageServerTests.py \
 	storage_sdm_api_test.py \
+	storage_sdm_create_volume_test.py \
 	storage_volume_artifacts_test.py \
 	tasksetTests.py \
 	testlibTests.py \
@@ -239,6 +240,7 @@ dist_vdsmtests_PYTHON = \
 	fake-ssh-add \
 	fake-ssh-agent \
 	monkeypatch.py \
+	sdmtestlib.py \
 	storagefakelib.py \
 	storagetestlib.py \
 	testlib.py \
