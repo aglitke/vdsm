@@ -169,6 +169,68 @@ class VmVolumeInfo(object):
     TYPE_NETWORK = "network"
 
 
+class VolumeMetadata(object):
+    log = logging.getLogger('Storage.VolumeMetadata')
+
+    def __init__(self, sd_id, img_id, parent_vol_id, size, vol_format,
+                 prealloc, vol_type, disk_type, description="",
+                 legality=ILLEGAL_VOL):
+        self.sd_id = str(sd_id)
+        self.img_id = str(img_id)
+        self.parent_vol_id = str(parent_vol_id)
+        self.size = int(size)
+        self.vol_format = str(vol_format)
+        self.prealloc = str(prealloc)
+        self.vol_type = str(vol_type)
+        self.disk_type = str(disk_type)
+        self.description = description
+        self.legality = str(legality)
+        self.ctime = int(time.time())
+        self.mtime = 0
+
+    @property
+    def description(self):
+        return self._description
+
+    @description.setter
+    def description(self, desc):
+        self._description = VolumeManifest.validateDescription(desc)
+
+    def format(self):
+        """
+        Format metadata string in storage format.
+
+        Raises MetadataOverflowError if formatted metadata is too long.
+        """
+        lines = ["%s=%s\n" % (key.strip(), str(value).strip())
+                 for key, value in self.info().iteritems()]
+        lines.append("EOF\n")
+        data = "".join(lines)
+        if len(data) > METADATA_SIZE:
+            raise se.MetadataOverflowError(data)
+        return data
+
+    def info(self):
+        """
+        Return metadata in dictionary format
+        """
+        return {
+            FORMAT: str(self.vol_format),
+            TYPE: str(self.prealloc),
+            VOLTYPE: str(self.vol_type),
+            DISKTYPE: str(self.disk_type),
+            SIZE: int(self.size),
+            CTIME: int(self.ctime),
+            sd.DMDK_POOLS: "",  # obsolete
+            DOMAIN: str(self.sd_id),
+            IMAGE: str(self.img_id),
+            DESCRIPTION: str(self.description),
+            PUUID: str(self.parent_vol_id),
+            MTIME: int(self.mtime),
+            LEGALITY: str(self.legality),
+        }
+
+
 class VolumeManifest(object):
     log = logging.getLogger('Storage.VolumeManifest')
 
@@ -528,35 +590,10 @@ class VolumeManifest(object):
     @classmethod
     def newMetadata(cls, metaId, sdUUID, imgUUID, puuid, size, format, type,
                     voltype, disktype, desc="", legality=ILLEGAL_VOL):
-        """
-        Creates the metadata for a volume and writes it to storage.
-        """
-        meta_dict = cls.new_metadata_dict(sdUUID, imgUUID, puuid, size, format,
-                                          type, voltype, disktype, desc,
-                                          legality)
-        cls.createMetadata(metaId, meta_dict)
-        return meta_dict
-
-    @classmethod
-    def new_metadata_dict(cls, sdUUID, imgUUID, puuid, size, format, type,
-                          voltype, disktype, desc="", legality=ILLEGAL_VOL):
-        """
-        Produce a metadata dictionary from a set of arguments.
-        """
-        return {
-            FORMAT: str(format),
-            TYPE: str(type),
-            VOLTYPE: str(voltype),
-            DISKTYPE: str(disktype),
-            SIZE: int(size),
-            CTIME: int(time.time()),
-            POOL: "",  # obsolete
-            DOMAIN: str(sdUUID),
-            IMAGE: str(imgUUID),
-            DESCRIPTION: cls.validateDescription(desc),
-            PUUID: str(puuid),
-            MTIME: 0,
-            LEGALITY: str(legality)}
+        meta = VolumeMetadata(sdUUID, imgUUID, puuid, size, format, type,
+                              voltype, disktype, desc, legality)
+        cls.createMetadata(metaId, meta.info())
+        return meta
 
     def refreshVolume(self):
         pass
