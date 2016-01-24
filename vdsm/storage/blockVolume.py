@@ -108,24 +108,15 @@ class BlockVolumeManifest(volume.VolumeManifest):
         vgname, offs = metaId
 
         try:
-            meta = misc.readblock(lvm.lvPath(vgname, sd.METADATA),
-                                  offs * volume.METADATA_SIZE,
-                                  volume.METADATA_SIZE)
-            # TODO: factor out logic below for sharing with file volumes
-            out = {}
-            for l in meta:
-                if l.startswith("EOF"):
-                    return out
-                if l.find("=") < 0:
-                    continue
-                key, value = l.split("=", 1)
-                out[key.strip()] = value.strip()
-
+            lines = misc.readblock(lvm.lvPath(vgname, sd.METADATA),
+                                   offs * volume.METADATA_SIZE,
+                                   volume.METADATA_SIZE)
+            md = volume.VolumeMetadata.from_lines(lines)
         except Exception as e:
             self.log.error(e, exc_info=True)
             raise se.VolumeMetadataReadError("%s: %s" % (metaId, e))
 
-        return out
+        return md.info()
 
     def validateImagePath(self):
         """

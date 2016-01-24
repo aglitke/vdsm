@@ -22,8 +22,10 @@ import uuid
 
 from testlib import VdsmTestCase
 
-from storage import image, sd, volume
 from vdsm import define
+from vdsm.storage import exception as se
+
+from storage import image, sd, volume
 
 
 def get_params(sd_id=None, img_id=None, parent_vol_id=None, size=None,
@@ -86,6 +88,36 @@ class VolumeMetadataTests(VdsmTestCase):
         params = get_params(description="!" * volume.METADATA_SIZE)
         md = volume.VolumeMetadata(**params)
         self.assertEqual(volume.DESCRIPTION_SIZE, len(md.description))
+
+    def test_from_lines_missing_param(self):
+        self.assertRaises(TypeError, volume.VolumeMetadata.from_lines, [])
+
+    def test_from_lines_invalid_param(self):
+        self.assertRaises(se.VolumeMetadataReadError,
+                          volume.VolumeMetadata.from_lines, ["FOO=bar"])
+
+    def test_from_lines_invalid_format(self):
+        lines = ["DOMAIN=domain", "IMAGE=image", "PUUID=parent", "SIZE=FOO",
+                 "FORMAT=format", "TYPE=type", "VOLTYPE=voltype",
+                 "DISKTYPE=disktype", "EOF"]
+        self.assertRaises(ValueError,
+                          volume.VolumeMetadata.from_lines, lines)
+
+    def test_from_lines(self):
+        lines = ["DOMAIN=domain", "IMAGE=image", "PUUID=parent", "SIZE=0",
+                 "FORMAT=format", "TYPE=type", "VOLTYPE=voltype",
+                 "DISKTYPE=disktype", "EOF"]
+        md = volume.VolumeMetadata.from_lines(lines)
+        self.assertEqual('domain', md.sd_id)
+        self.assertEqual('image', md.img_id)
+        self.assertEqual('parent', md.parent_vol_id)
+        self.assertEqual(0, md.size)
+        self.assertEqual('format', md.vol_format)
+        self.assertEqual('type', md.prealloc)
+        self.assertEqual('voltype', md.vol_type)
+        self.assertEqual('disktype', md.disk_type)
+        self.assertEqual("", md.description)
+        self.assertEqual(0, md.mtime)
 
     def _compare_params_to_info(self, params, info):
         for param_name, info_field in self.params_to_fields.items():

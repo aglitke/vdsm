@@ -170,11 +170,27 @@ class VmVolumeInfo(object):
 
 
 class VolumeMetadata(object):
+    # Metadata_key: (class_attribute, filter_fn)
+    MD_FIELDS = {
+        DOMAIN: ('sd_id', str),
+        IMAGE:  ('img_id', str),
+        PUUID:  ('parent_vol_id', str),
+        SIZE:   ('size', int),
+        FORMAT: ('vol_format', str),
+        TYPE:   ('prealloc', str),
+        VOLTYPE: ('vol_type', str),
+        DISKTYPE: ('disk_type', str),
+        DESCRIPTION: ('description', str),
+        LEGALITY: ('legality', str),
+        CTIME: ('ctime', int),
+        MTIME: ('mtime', int),
+    }
+
     log = logging.getLogger('Storage.VolumeMetadata')
 
     def __init__(self, sd_id, img_id, parent_vol_id, size, vol_format,
                  prealloc, vol_type, disk_type, description="",
-                 legality=ILLEGAL_VOL):
+                 legality=ILLEGAL_VOL, ctime=None, mtime=None):
         self.sd_id = str(sd_id)
         self.img_id = str(img_id)
         self.parent_vol_id = str(parent_vol_id)
@@ -185,8 +201,28 @@ class VolumeMetadata(object):
         self.disk_type = str(disk_type)
         self.description = description
         self.legality = str(legality)
-        self.ctime = int(time.time())
-        self.mtime = 0
+        self.ctime = int(time.time()) if ctime is None else ctime
+        self.mtime = 0 if mtime is None else mtime
+
+    @classmethod
+    def from_lines(cls, lines):
+        kwargs = {}
+        for l in lines:
+            if l.startswith("EOF"):
+                break
+            if l.find("=") < 0:
+                continue
+            key, value = l.split("=", 1)
+            if key == POOL:  # POOL is deprecated
+                continue
+
+            try:
+                param = cls.MD_FIELDS[key.strip()][0]
+            except KeyError:
+                raise se.VolumeMetadataReadError("Invalid key: %s" %
+                                                 key.strip())
+            kwargs[param] = value.strip()
+        return cls(**kwargs)
 
     @property
     def description(self):
@@ -214,21 +250,11 @@ class VolumeMetadata(object):
         """
         Return metadata in dictionary format
         """
-        return {
-            FORMAT: str(self.vol_format),
-            TYPE: str(self.prealloc),
-            VOLTYPE: str(self.vol_type),
-            DISKTYPE: str(self.disk_type),
-            SIZE: int(self.size),
-            CTIME: int(self.ctime),
-            sd.DMDK_POOLS: "",  # obsolete
-            DOMAIN: str(self.sd_id),
-            IMAGE: str(self.img_id),
-            DESCRIPTION: str(self.description),
-            PUUID: str(self.parent_vol_id),
-            MTIME: int(self.mtime),
-            LEGALITY: str(self.legality),
-        }
+        ret = {}
+        for field, (attr, filter_fn) in self.MD_FIELDS.items():
+            ret[field] = filter_fn(getattr(self, attr))
+        ret[sd.DMDK_POOLS] = ""  # Deprecated
+        return ret
 
 
 class VolumeManifest(object):
