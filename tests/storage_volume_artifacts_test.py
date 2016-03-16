@@ -22,11 +22,14 @@ import os
 import uuid
 
 from testlib import VdsmTestCase
-from storagetestlib import fake_file_env
+from testValidation import brokentest
+from storagetestlib import fake_block_env, fake_file_env
 
 from vdsm.storage import exception as se
+from vdsm.storage.constants import TEMP_VOL_LVTAG
 
-from storage import image, sd, volume
+from storage import image, misc, sd, blockVolume, volume
+import storage.sdm.api.create_volume
 
 
 class ExpectedFailure(Exception):
@@ -37,6 +40,7 @@ BASE_RAW_PARAMS = (1073741824, volume.RAW_FORMAT,
                    image.SYSTEM_DISK_TYPE, 'raw_volume')
 BASE_COW_PARAMS = (1073741824, volume.COW_FORMAT,
                    image.SYSTEM_DISK_TYPE, 'cow_volume')
+MB = 1024 ** 2
 
 
 class VolumeArtifactsTestsMixin(object):
@@ -102,6 +106,22 @@ class VolumeArtifactsTestsMixin(object):
             self.assertRaises(se.InvalidParameterException, second.create,
                               *BASE_RAW_PARAMS)
 
+    @brokentest("Broken until COW volume support is added")
+    def test_create_same_volume_in_image(self):
+        with self.fake_env() as env:
+            artifacts = env.sd_manifest.get_volume_artifacts(
+                self.img_id, self.vol_id)
+            artifacts.create(*BASE_RAW_PARAMS)
+            artifacts.commit()
+            artifacts = env.sd_manifest.get_volume_artifacts(
+                self.img_id, self.vol_id)
+            parent = storage.sdm.api.create_volume.ParentVolumeInfo(
+                dict(img_id=self.img_id, vol_id=self.vol_id))
+            params = BASE_COW_PARAMS + (parent,)
+
+            self.assertRaises(se.VolumeAlreadyExists,
+                              artifacts.create, *params)
+
     def test_new_image_create_and_commit(self):
         with self.fake_env() as env:
             artifacts = env.sd_manifest.get_volume_artifacts(
@@ -115,24 +135,22 @@ class VolumeArtifactsTestsMixin(object):
             self.assertEqual(desc, vol.getDescription())
             self.assertEqual(volume.LEGAL_VOL, vol.getLegality())
             self.assertEqual(size / volume.BLOCK_SIZE, vol.getSize())
+            self.assertEqual(size, os.stat(artifacts.volume_path).st_size)
             self.assertEqual(vol_format, vol.getFormat())
             self.assertEqual(str(disk_type), vol.getDiskType())
 
-    # Invalid use of artifacts
+    # Artifacts visibility
 
-    def test_new_image_commit_without_create(self):
+    def test_getallvolumes(self):
+        # Artifacts must not be recognized as volumes until commit is called.
         with self.fake_env() as env:
-            artifacts = env.sd_manifest.get_volume_artifacts(
-                self.img_id, self.vol_id)
-            self.assertRaises(OSError, artifacts.commit)
-
-    def test_new_image_commit_twice(self):
-        with self.fake_env() as env:
+            self.assertEqual({}, env.sd_manifest.getAllVolumes())
             artifacts = env.sd_manifest.get_volume_artifacts(
                 self.img_id, self.vol_id)
             artifacts.create(*BASE_RAW_PARAMS)
+            self.assertEqual({}, env.sd_manifest.getAllVolumes())
             artifacts.commit()
-            self.assertRaises(OSError, artifacts.commit)
+            self.assertIn(self.vol_id, env.sd_manifest.getAllVolumes())
 
 
 class FileVolumeArtifactsTests(VolumeArtifactsTestsMixin, VdsmTestCase):
@@ -210,6 +228,22 @@ class FileVolumeArtifactsTests(VolumeArtifactsTestsMixin, VdsmTestCase):
             self.assertRaises(se.DomainHasGarbage, artifacts.create,
                               *BASE_RAW_PARAMS)
 
+    # Invalid use of artifacts
+
+    def test_new_image_commit_without_create(self):
+        with self.fake_env() as env:
+            artifacts = env.sd_manifest.get_volume_artifacts(
+                self.img_id, self.vol_id)
+            self.assertRaises(OSError, artifacts.commit)
+
+    def test_new_image_commit_twice(self):
+        with self.fake_env() as env:
+            artifacts = env.sd_manifest.get_volume_artifacts(
+                self.img_id, self.vol_id)
+            artifacts.create(*BASE_RAW_PARAMS)
+            artifacts.commit()
+            self.assertRaises(OSError, artifacts.commit)
+
     def validate_new_image_path(self, artifacts, has_md=False,
                                 has_lease=False, has_volume=False):
         path = artifacts.artifacts_dir
@@ -249,13 +283,95 @@ class FileVolumeArtifactVisibilityTests(VdsmTestCase):
             artifacts.commit()
             self.assertEqual({self.img_id}, env.sd_manifest.getAllImages())
 
-    def test_getallvolumes(self):
-        # Artifacts must not be recognized as volumes until commit is called.
-        with fake_file_env() as env:
-            self.assertEqual({}, env.sd_manifest.getAllVolumes())
+
+class BlockVolumeArtifactsTests(VolumeArtifactsTestsMixin, VdsmTestCase):
+
+    def fake_env(self):
+        return fake_block_env()
+
+    def test_raw_volume_preallocation(self):
+        with self.fake_env() as env:
+            artifacts = env.sd_manifest.get_volume_artifacts(
+                self.img_id, self.vol_id)
+            size, vol_format, disk_type, desc = BASE_RAW_PARAMS
+            artifacts.create(size, vol_format, disk_type, desc)
+            artifacts.commit()
+            vol = env.sd_manifest.produceVolume(self.img_id, self.vol_id)
+            self.assertEqual(volume.PREALLOCATED_VOL, vol.getType())
+
+    def test_size_rounded_up(self):
+        # If the underlying device is larger the size will be updated
+        initial_size = (9 * MB) + 1024
+        expected_size = 10 * MB
+        with fake_block_env() as env:
+            artifacts = env.sd_manifest.get_volume_artifacts(
+                self.img_id, self.vol_id)
+            artifacts.create(initial_size, volume.RAW_FORMAT,
+                             image.SYSTEM_DISK_TYPE, 'raw_volume')
+            artifacts.commit()
+            vol = env.sd_manifest.produceVolume(self.img_id, self.vol_id)
+            self.assertEqual(expected_size / volume.BLOCK_SIZE, vol.getSize())
+
+    # Invalid use of artifacts
+
+    def test_commit_without_create(self):
+        with self.fake_env() as env:
+            artifacts = env.sd_manifest.get_volume_artifacts(
+                self.img_id, self.vol_id)
+            self.assertRaises(se.LogicalVolumeReplaceTagError,
+                              artifacts.commit)
+
+    def test_commit_twice(self):
+        with self.fake_env() as env:
             artifacts = env.sd_manifest.get_volume_artifacts(
                 self.img_id, self.vol_id)
             artifacts.create(*BASE_RAW_PARAMS)
-            self.assertEqual({}, env.sd_manifest.getAllVolumes())
             artifacts.commit()
-            self.assertIn(self.vol_id, env.sd_manifest.getAllVolumes())
+            artifacts.commit()  # removing nonexistent tags is allowed
+
+    def validate_artifacts(self, artifacts, env):
+        try:
+            lv = env.lvm.getLV(artifacts.sd_manifest.sdUUID, artifacts.vol_id)
+        except se.LogicalVolumeDoesNotExistError:
+            raise AssertionError("LV missing")
+
+        if TEMP_VOL_LVTAG not in lv.tags:
+            raise AssertionError("Missing TEMP_VOL_LVTAG")
+
+        md_slot = None
+        for tag in lv.tags:
+            if tag.startswith(blockVolume.TAG_PREFIX_MD):
+                md_slot = int(tag[len(blockVolume.TAG_PREFIX_MD):])
+                break
+
+        self.validate_metadata(env, md_slot, artifacts)
+
+    def validate_metadata(self, env, md_slot, artifacts):
+        md_lines = misc.readblock(
+            env.lvm.lvPath(artifacts.sd_manifest.sdUUID, sd.METADATA),
+            md_slot * volume.METADATA_SIZE, volume.METADATA_SIZE)
+        md = volume.VolumeMetadata.from_lines(md_lines)
+
+        # Test a few fields just to check that metadata was written
+        self.assertEqual(artifacts.sd_manifest.sdUUID, md.sd_id)
+        self.assertEqual(artifacts.img_id, md.img_id)
+
+
+class BlockVolumeArtifactVisibilityTests(VdsmTestCase):
+
+    def setUp(self):
+        self.img_id = str(uuid.uuid4())
+        self.vol_id = str(uuid.uuid4())
+
+    def test_getallimages(self):
+        # The current behavior of getAllImages for block domains does not
+        # report images that contain only artifacts.  This differs from the
+        # file implementation.
+        with fake_block_env() as env:
+            self.assertEqual(set(), env.sd_manifest.getAllImages())
+            artifacts = env.sd_manifest.get_volume_artifacts(
+                self.img_id, self.vol_id)
+            artifacts.create(*BASE_RAW_PARAMS)
+            self.assertEqual(set(), env.sd_manifest.getAllImages())
+            artifacts.commit()
+            self.assertEqual({self.img_id}, env.sd_manifest.getAllImages())
