@@ -25,6 +25,7 @@ from storagefakelib import FakeLVM
 from monkeypatch import MonkeyPatchScope
 
 from storage import sd, blockSD, fileSD, image, volume, blockVolume
+from storage.sdm import volume_artifacts
 
 
 NR_PVS = 2       # The number of fake PVs we use to make a fake VG by default
@@ -57,7 +58,8 @@ def fake_block_env(obj=None):
         with MonkeyPatchScope([
             (blockSD, 'lvm', lvm),
             (blockVolume, 'lvm', lvm),
-            (sd, 'storage_repository', tmpdir)
+            (volume_artifacts, 'lvm', lvm),
+            (sd, 'storage_repository', tmpdir),
         ]):
             sd_manifest = make_blocksd_manifest(tmpdir, lvm)
             yield FakeEnv(sd_manifest, lvm=lvm)
@@ -102,9 +104,13 @@ def make_blocksd_manifest(tmpdir, fake_lvm, sduuid=None, devices=None):
     metadata.update(make_sd_metadata(sduuid))
 
     manifest = blockSD.BlockStorageDomainManifest(sduuid, metadata)
+    manifest.mountpoint = os.path.join(tmpdir, sd.DOMAIN_MNT_POINT,
+                                       sd.BLOCKSD_DIR)
     manifest.domaindir = tmpdir
     os.makedirs(os.path.join(manifest.domaindir, sduuid, sd.DOMAIN_IMAGES))
 
+    # Make the mountpoint directory structure
+    os.makedirs(os.path.join(manifest.mountpoint, sduuid, sd.DOMAIN_IMAGES))
     return manifest
 
 

@@ -22,9 +22,10 @@ import os
 import uuid
 
 from testlib import VdsmTestCase
-from storagetestlib import fake_file_env
+from storagetestlib import fake_block_env, fake_file_env
 
 from vdsm.storage import exception as se
+from vdsm.storage.constants import TEMP_VOL_LVTAG
 
 from storage import image, sd, volume
 
@@ -261,3 +262,49 @@ class FileVolumeArtifactVisibilityTests(VdsmTestCase):
             self.assertEqual({garbage_img_id}, env.sd_manifest.getAllImages())
             artifacts.commit()
             self.assertEqual({self.img_id}, env.sd_manifest.getAllImages())
+
+
+class BlockVolumeArtifactsTests(VolumeArtifactsTestsMixin, VdsmTestCase):
+
+    def fake_env(self):
+        return fake_block_env()
+
+    def test_raw_volume_preallocation(self):
+        with self.fake_env() as env:
+            artifacts = env.sd_manifest.get_volume_artifacts(
+                    self.img_id, self.vol_id)
+            size, vol_format, disk_type, desc = BASE_RAW_PARAMS
+            artifacts.create(size, vol_format, disk_type, desc)
+            artifacts.commit()
+            vol = env.sd_manifest.produceVolume(self.img_id, self.vol_id)
+            self.assertEqual(volume.PREALLOCATED_VOL, vol.getType())
+
+    def validate_artifacts(self, artifacts, env):
+        try:
+            lv = env.lvm.getLV(artifacts.sd_manifest.sdUUID, artifacts.vol_id)
+        except se.LogicalVolumeDoesNotExistError:
+            self.log.debug("LV missing")
+            raise AssertionError()
+
+        if TEMP_VOL_LVTAG not in lv.tags:
+            self.log.debug("Missing TEMP_VOL_LVTAG")
+            raise AssertionError()
+
+        # TODO: Validate lease and metadata allocation
+
+    # Invalid use of artifacts
+
+    def test_commit_without_create(self):
+        with self.fake_env() as env:
+            artifacts = env.sd_manifest.get_volume_artifacts(
+                    self.img_id, self.vol_id)
+            self.assertRaises(se.LogicalVolumeReplaceTagError,
+                              artifacts.commit)
+
+    def test_commit_twice(self):
+        with self.fake_env() as env:
+            artifacts = env.sd_manifest.get_volume_artifacts(
+                    self.img_id, self.vol_id)
+            artifacts.create(*BASE_RAW_PARAMS)
+            artifacts.commit()
+            artifacts.commit()  # removing nonexistent tags is allowed
