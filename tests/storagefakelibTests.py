@@ -295,6 +295,20 @@ class FakeLVMSimpleVGTests(VdsmTestCase):
                 self.assertTrue(lv.active)
                 self.assertEqual('a', lv.attr.state)
 
+    def test_changevgtags(self):
+        with self.base_config() as lvm:
+            deltags = (blockSD.STORAGE_UNREADY_DOMAIN_TAG,)
+            addtags = ("FOO",)
+            lvm.changeVGTags(self.VG_NAME, delTags=deltags, addTags=addtags)
+            vg = lvm.getVG(self.VG_NAME)
+            self.assertEqual(addtags, vg.tags)
+
+    def test_changevgtags_add_and_delete_same_tag(self):
+        with self.base_config() as lvm:
+            self.assertRaises(se.VolumeGroupReplaceTagError,
+                              lvm.changeVGTags, self.VG_NAME,
+                              delTags=('FOO',), addTags=('FOO',))
+
 
 @expandPermutations
 class FakeLVMGeneralTests(VdsmTestCase):
