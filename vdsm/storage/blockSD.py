@@ -36,6 +36,7 @@ from vdsm.config import config
 from vdsm import constants
 from vdsm import exception
 from vdsm import utils
+from vdsm.storage import constants as storage_constants
 from vdsm.storage import exception as se
 from vdsm.storage.persistent import PersistentDict, DictValidator
 import vdsm.supervdsm as svdsm
@@ -157,11 +158,12 @@ def _getVolsTree(sdUUID):
                 image = tag[len(blockVolume.TAG_PREFIX_IMAGE):]
             elif tag.startswith(blockVolume.TAG_PREFIX_PARENT):
                 parent = tag[len(blockVolume.TAG_PREFIX_PARENT):]
+            elif tag == storage_constants.TEMP_VOL_LVTAG:
+                break  # Don't report volumes marked for garbage collection
+        else:
             if parent and image:
                 vols[lv.name] = BlockSDVol(lv.name, image, parent)
-                break
-        else:
-            if lv.name not in SPECIAL_LVS:
+            elif lv.name not in SPECIAL_LVS:
                 log.warning("Ignoring Volume %s that lacks minimal tag set"
                             "tags %s" % (lv.name, lv.tags))
     return vols
