@@ -22,12 +22,14 @@ import uuid
 
 from testlib import VdsmTestCase, make_file, recorded
 from storagetestlib import (
+    make_block_volume,
     make_file_volume,
     fake_block_env,
     fake_file_env
 )
 
-from storage import sd, blockSD, blockVolume
+from storage import sd, blockSD, blockVolume, volume
+from vdsm.storage import exception as se
 
 VOLSIZE = 1048576
 MB = 1048576
@@ -130,6 +132,45 @@ class BlockManifestTests(VdsmTestCase):
                 env.sd_manifest.sdUUID, metadata)
             self.assertEquals(2048, new_manifest.logBlkSize)
             self.assertEquals(1024, new_manifest.phyBlkSize)
+
+    def test_get_new_volume_actual_size_cow(self):
+        # COW volumes always return the original size
+        size = 10 * MB + 1024
+        img_id = str(uuid.uuid4())
+        vol_id = str(uuid.uuid4())
+        with fake_block_env() as env:
+            vol_class = env.sd_manifest.getVolumeClass()
+            ret_size = vol_class.get_new_volume_actual_size(
+                env.sd_manifest, img_id, vol_id, volume.COW_FORMAT, size)
+            self.assertEqual(size, ret_size)
+
+    def test_get_new_volume_actual_size_raw_update(self):
+        # If the underlying device is larger the size will be updated
+        initial_size = 9 * MB + 1024
+        expected_size = 10 * MB
+        img_id = str(uuid.uuid4())
+        vol_id = str(uuid.uuid4())
+        with fake_block_env() as env:
+            make_block_volume(env.lvm, env.sd_manifest, initial_size,
+                              img_id, vol_id)
+            vol_class = env.sd_manifest.getVolumeClass()
+            ret_size = vol_class.get_new_volume_actual_size(
+                env.sd_manifest, img_id, vol_id,
+                volume.RAW_FORMAT, initial_size / volume.BLOCK_SIZE)
+            self.assertEqual(expected_size, ret_size * volume.BLOCK_SIZE)
+
+    def test_get_new_volume_actual_size_raw_too_small(self):
+        # If the underlying device is smaller than an error will be raised
+        size = 10 * MB
+        img_id = str(uuid.uuid4())
+        vol_id = str(uuid.uuid4())
+        with fake_block_env() as env:
+            make_block_volume(env.lvm, env.sd_manifest, size, img_id, vol_id)
+            vol_class = env.sd_manifest.getVolumeClass()
+            self.assertRaises(se.VolumeCreationError,
+                              vol_class.get_new_volume_actual_size,
+                              env.sd_manifest, img_id, vol_id,
+                              volume.RAW_FORMAT, size / volume.BLOCK_SIZE + 1)
 
 
 class BlockDomainMetadataSlotTests(VdsmTestCase):

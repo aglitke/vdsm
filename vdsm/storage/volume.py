@@ -568,6 +568,29 @@ class VolumeManifest(object):
         """
         pass  # Do not remove this method or the V3 upgrade will fail.
 
+    @classmethod
+    def get_new_volume_actual_size(cls, sd_manifest, img_id, vol_id,
+                                   vol_format, size):
+        # When the volume format is raw what the guest sees is the apparent
+        # size of the file/device therefore if the requested size doesn't
+        # match the apparent size (eg: physical extent granularity in LVM)
+        # we need to update the size value so that the metadata reflects
+        # the correct state.
+        if vol_format == RAW_FORMAT:
+            real_size = int(sd_manifest.getVSize(img_id, vol_id) / BLOCK_SIZE)
+            if real_size < size:
+                cls.log.error("The volume %s apparent size %s is smaller "
+                              "than the requested size %s",
+                              vol_id, real_size, size)
+                raise se.VolumeCreationError()
+            if real_size > size:
+                cls.log.info("The requested size for volume %s doesn't "
+                             "match the granularity on domain %s, "
+                             "updating the volume size from %s to %s",
+                             vol_id, sd_manifest.sdUUID, size, real_size)
+                return real_size
+        return size
+
 
 class Volume(object):
     log = logging.getLogger('Storage.Volume')
@@ -942,24 +965,8 @@ class Volume(object):
                 cls.log.error("Failed to create volume %s: %s", volPath, e)
                 vars.task.popRecovery()
                 raise
-            # When the volume format is raw what the guest sees is the apparent
-            # size of the file/device therefore if the requested size doesn't
-            # match the apparent size (eg: physical extent granularity in LVM)
-            # we need to update the size value so that the metadata reflects
-            # the correct state.
-            if volFormat == RAW_FORMAT:
-                apparentSize = int(dom.getVSize(imgUUID, volUUID) / BLOCK_SIZE)
-                if apparentSize < size:
-                    cls.log.error("The volume %s apparent size %s is smaller "
-                                  "than the requested size %s",
-                                  volUUID, apparentSize, size)
-                    raise se.VolumeCreationError()
-                if apparentSize > size:
-                    cls.log.info("The requested size for volume %s doesn't "
-                                 "match the granularity on domain %s, "
-                                 "updating the volume size from %s to %s",
-                                 volUUID, sdUUID, size, apparentSize)
-                    size = apparentSize
+            size = cls.manifestClass.get_new_volume_actual_size(
+                dom.manifest, imgUUID, volUUID, volFormat, size)
 
             vars.task.pushRecovery(
                 task.Recovery("Create volume metadata rollback", clsModule,
