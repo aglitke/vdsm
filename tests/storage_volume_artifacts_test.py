@@ -118,6 +118,19 @@ class VolumeArtifactsTestsMixin(object):
             self.assertEqual(vol_format, vol.getFormat())
             self.assertEqual(str(disk_type), vol.getDiskType())
 
+    # Artifacts visibility
+
+    def test_getallvolumes(self):
+        # Artifacts must not be recognized as volumes until commit is called.
+        with self.fake_env() as env:
+            self.assertEqual({}, env.sd_manifest.getAllVolumes())
+            artifacts = env.sd_manifest.get_volume_artifacts(
+                self.img_id, self.vol_id)
+            artifacts.create(*BASE_RAW_PARAMS)
+            self.assertEqual({}, env.sd_manifest.getAllVolumes())
+            artifacts.commit()
+            self.assertIn(self.vol_id, env.sd_manifest.getAllVolumes())
+
 
 class FileVolumeArtifactsTests(VolumeArtifactsTestsMixin, VdsmTestCase):
 
@@ -248,14 +261,3 @@ class FileVolumeArtifactVisibilityTests(VdsmTestCase):
             self.assertEqual({garbage_img_id}, env.sd_manifest.getAllImages())
             artifacts.commit()
             self.assertEqual({self.img_id}, env.sd_manifest.getAllImages())
-
-    def test_getallvolumes(self):
-        # Artifacts must not be recognized as volumes until commit is called.
-        with fake_file_env() as env:
-            self.assertEqual({}, env.sd_manifest.getAllVolumes())
-            artifacts = env.sd_manifest.get_volume_artifacts(
-                self.img_id, self.vol_id)
-            artifacts.create(*BASE_RAW_PARAMS)
-            self.assertEqual({}, env.sd_manifest.getAllVolumes())
-            artifacts.commit()
-            self.assertIn(self.vol_id, env.sd_manifest.getAllVolumes())
