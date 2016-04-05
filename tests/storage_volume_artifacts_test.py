@@ -118,22 +118,6 @@ class VolumeArtifactsTestsMixin(object):
             self.assertEqual(vol_format, vol.getFormat())
             self.assertEqual(str(disk_type), vol.getDiskType())
 
-    # Invalid use of artifacts
-
-    def test_new_image_commit_without_create(self):
-        with self.fake_env() as env:
-            artifacts = env.sd_manifest.get_volume_artifacts(
-                self.img_id, self.vol_id)
-            self.assertRaises(OSError, artifacts.commit)
-
-    def test_new_image_commit_twice(self):
-        with self.fake_env() as env:
-            artifacts = env.sd_manifest.get_volume_artifacts(
-                self.img_id, self.vol_id)
-            artifacts.create(*BASE_RAW_PARAMS)
-            artifacts.commit()
-            self.assertRaises(OSError, artifacts.commit)
-
 
 class FileVolumeArtifactsTests(VolumeArtifactsTestsMixin, VdsmTestCase):
 
@@ -228,6 +212,22 @@ class FileVolumeArtifactsTests(VolumeArtifactsTestsMixin, VdsmTestCase):
 
     def failure(*args):
         raise ExpectedFailure()
+
+    # Invalid use of artifacts
+
+    def test_new_image_commit_without_create(self):
+        with self.fake_env() as env:
+            artifacts = env.sd_manifest.get_volume_artifacts(
+                    self.img_id, self.vol_id)
+            self.assertRaises(OSError, artifacts.commit)
+
+    def test_new_image_commit_twice(self):
+        with self.fake_env() as env:
+            artifacts = env.sd_manifest.get_volume_artifacts(
+                    self.img_id, self.vol_id)
+            artifacts.create(*BASE_RAW_PARAMS)
+            artifacts.commit()
+            self.assertRaises(OSError, artifacts.commit)
 
 
 class FileVolumeArtifactVisibilityTests(VdsmTestCase):
