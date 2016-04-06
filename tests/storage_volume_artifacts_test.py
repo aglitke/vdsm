@@ -27,16 +27,25 @@ from storagetestlib import fake_file_env
 from vdsm.storage import exception as se
 
 from storage import image, sd, volume
+from storage.sdm.api.types import CreateVolumeInfo
 
 
 class ExpectedFailure(Exception):
     pass
 
 
-BASE_RAW_PARAMS = (1073741824, volume.RAW_FORMAT,
-                   image.SYSTEM_DISK_TYPE, 'raw_volume')
-BASE_COW_PARAMS = (1073741824, volume.COW_FORMAT,
-                   image.SYSTEM_DISK_TYPE, 'cow_volume')
+def _get_base_raw_create_params(artifacts):
+    return CreateVolumeInfo(
+        dict(sd_id=artifacts.sd_manifest.sdUUID, img_id=artifacts.img_id,
+             vol_id=artifacts.vol_id, virtual_size=1073741824,
+             vol_format='RAW', disk_type='SYSTEM', description='raw_volume'))
+
+
+def _get_base_cow_create_params(artifacts):
+    return CreateVolumeInfo(
+            dict(sd_id=artifacts.sd_manifest.sdUUID, img_id=artifacts.img_id,
+                 vol_id=artifacts.vol_id, virtual_size=1073741824,
+                 vol_format='COW', disk_type='SYSTEM', description='raw_volume'))
 
 
 class VolumeArtifactsTestsMixin(object):
@@ -58,7 +67,8 @@ class VolumeArtifactsTestsMixin(object):
         with self.fake_env() as env:
             artifacts = env.sd_manifest.get_volume_artifacts(
                 self.img_id, self.vol_id)
-            artifacts.create(*BASE_RAW_PARAMS)
+            vol_info = _get_base_raw_create_params(artifacts)
+            artifacts.create(vol_info)
             self.assertTrue(artifacts.is_garbage())
             self.assertFalse(artifacts.is_image())
             self.validate_artifacts(artifacts, env)
@@ -67,15 +77,16 @@ class VolumeArtifactsTestsMixin(object):
         with self.fake_env() as env:
             artifacts = env.sd_manifest.get_volume_artifacts(
                 self.img_id, self.vol_id)
-            artifacts.create(*BASE_RAW_PARAMS)
-            self.assertRaises(se.DomainHasGarbage, artifacts.create,
-                              *BASE_RAW_PARAMS)
+            vol_info = _get_base_raw_create_params(artifacts)
+            artifacts.create(vol_info)
+            self.assertRaises(se.DomainHasGarbage, artifacts.create, vol_info)
 
     def test_state_image(self):
         with self.fake_env() as env:
             artifacts = env.sd_manifest.get_volume_artifacts(
                 self.img_id, self.vol_id)
-            artifacts.create(*BASE_RAW_PARAMS)
+            vol_info = _get_base_raw_create_params(artifacts)
+            artifacts.create(vol_info)
             artifacts.commit()
             self.assertFalse(artifacts.is_garbage())
             self.assertTrue(artifacts.is_image())
@@ -84,39 +95,45 @@ class VolumeArtifactsTestsMixin(object):
         with self.fake_env() as env:
             first = env.sd_manifest.get_volume_artifacts(
                 self.img_id, self.vol_id)
-            first.create(*BASE_RAW_PARAMS)
+            vol_info = _get_base_raw_create_params(first)
+            first.create(vol_info)
             first.commit()
             second = env.sd_manifest.get_volume_artifacts(
                 self.img_id, str(uuid.uuid4()))
+            vol_info = _get_base_cow_create_params(second)
             self.assertRaises(NotImplementedError,
-                              second.create, *BASE_COW_PARAMS)
+                              second.create, vol_info)
 
     def test_create_additional_raw_vol(self):
         with self.fake_env() as env:
             first = env.sd_manifest.get_volume_artifacts(
                 self.img_id, self.vol_id)
-            first.create(*BASE_RAW_PARAMS)
+            vol_info = _get_base_raw_create_params(first)
+            first.create(vol_info)
             first.commit()
             second = env.sd_manifest.get_volume_artifacts(
                 self.img_id, str(uuid.uuid4()))
-            self.assertRaises(se.InvalidParameterException, second.create,
-                              *BASE_RAW_PARAMS)
+            vol_info = _get_base_raw_create_params(second)
+            self.assertRaises(se.InvalidParameterException,
+                              second.create, vol_info)
 
     def test_new_image_create_and_commit(self):
         with self.fake_env() as env:
             artifacts = env.sd_manifest.get_volume_artifacts(
                 self.img_id, self.vol_id)
-            size, vol_format, disk_type, desc = BASE_RAW_PARAMS
-            artifacts.create(size, vol_format, disk_type, desc)
+            vol_info = _get_base_raw_create_params(artifacts)
+            artifacts.create(vol_info)
             artifacts.commit()
             vol = env.sd_manifest.produceVolume(self.img_id, self.vol_id)
             self.assertEqual(volume.type2name(volume.LEAF_VOL),
                              vol.getVolType())
-            self.assertEqual(desc, vol.getDescription())
+            self.assertEqual(vol_info.description, vol.getDescription())
             self.assertEqual(volume.LEGAL_VOL, vol.getLegality())
-            self.assertEqual(size / volume.BLOCK_SIZE, vol.getSize())
-            self.assertEqual(vol_format, vol.getFormat())
-            self.assertEqual(str(disk_type), vol.getDiskType())
+            self.assertEqual(vol_info.virtual_size / volume.BLOCK_SIZE,
+                             vol.getSize())
+            self.assertEqual(vol_info.vol_format,
+                             volume.type2name(vol.getFormat()))
+            self.assertEqual(str(vol_info.disk_type), vol.getDiskType())
 
     # Invalid use of artifacts
 
@@ -130,7 +147,8 @@ class VolumeArtifactsTestsMixin(object):
         with self.fake_env() as env:
             artifacts = env.sd_manifest.get_volume_artifacts(
                 self.img_id, self.vol_id)
-            artifacts.create(*BASE_RAW_PARAMS)
+            vol_info = _get_base_raw_create_params(artifacts)
+            artifacts.create(vol_info)
             artifacts.commit()
             self.assertRaises(OSError, artifacts.commit)
 
@@ -144,8 +162,8 @@ class FileVolumeArtifactsTests(VolumeArtifactsTestsMixin, VdsmTestCase):
         with self.fake_env() as env:
             artifacts = env.sd_manifest.get_volume_artifacts(
                 self.img_id, self.vol_id)
-            size, vol_format, disk_type, desc = BASE_RAW_PARAMS
-            artifacts.create(size, vol_format, disk_type, desc)
+            vol_info = _get_base_raw_create_params(artifacts)
+            artifacts.create(vol_info)
             artifacts.commit()
             vol = env.sd_manifest.produceVolume(self.img_id, self.vol_id)
             self.assertEqual(volume.SPARSE_VOL, vol.getType())
@@ -156,9 +174,9 @@ class FileVolumeArtifactsTests(VolumeArtifactsTestsMixin, VdsmTestCase):
         with self.fake_env() as env:
             artifacts = env.sd_manifest.get_volume_artifacts(
                 self.img_id, self.vol_id)
+            vol_info = _get_base_raw_create_params(artifacts)
             artifacts._create_metadata_artifact = self.failure
-            self.assertRaises(ExpectedFailure, artifacts.create,
-                              *BASE_RAW_PARAMS)
+            self.assertRaises(ExpectedFailure, artifacts.create, vol_info)
             self.validate_new_image_path(artifacts)
 
     def test_new_image_create_lease_failure(self):
@@ -167,16 +185,16 @@ class FileVolumeArtifactsTests(VolumeArtifactsTestsMixin, VdsmTestCase):
         with self.fake_env() as env:
             artifacts = env.sd_manifest.get_volume_artifacts(
                 self.img_id, self.vol_id)
+            vol_info = _get_base_raw_create_params(artifacts)
             artifacts._create_lease_file = self.failure
-            self.assertRaises(ExpectedFailure, artifacts.create,
-                              *BASE_RAW_PARAMS)
+            self.assertRaises(ExpectedFailure, artifacts.create, vol_info)
             self.validate_new_image_path(artifacts, has_md=True)
 
             # We cannot re-create in this state because garbage left behind
             artifacts = env.sd_manifest.get_volume_artifacts(
                 self.img_id, self.vol_id)
-            self.assertRaises(se.DomainHasGarbage, artifacts.create,
-                              *BASE_RAW_PARAMS)
+            vol_info = _get_base_raw_create_params(artifacts)
+            self.assertRaises(se.DomainHasGarbage, artifacts.create, vol_info)
 
     def test_new_image_create_container_failure(self):
         # If we fail before the container is created we will have a garbage
@@ -184,17 +202,17 @@ class FileVolumeArtifactsTests(VolumeArtifactsTestsMixin, VdsmTestCase):
         with self.fake_env() as env:
             artifacts = env.sd_manifest.get_volume_artifacts(
                 self.img_id, self.vol_id)
+            vol_info = _get_base_raw_create_params(artifacts)
             artifacts._create_volume_file = self.failure
-            self.assertRaises(ExpectedFailure, artifacts.create,
-                              *BASE_RAW_PARAMS)
+            self.assertRaises(ExpectedFailure, artifacts.create, vol_info)
             self.validate_new_image_path(artifacts,
                                          has_md=True, has_lease=True)
 
             # We cannot re-create in this state because garbage left behind
             artifacts = env.sd_manifest.get_volume_artifacts(
                 self.img_id, self.vol_id)
-            self.assertRaises(se.DomainHasGarbage, artifacts.create,
-                              *BASE_RAW_PARAMS)
+            vol_info = _get_base_raw_create_params(artifacts)
+            self.assertRaises(se.DomainHasGarbage, artifacts.create, vol_info)
 
     def test_garbage_image_dir(self):
         # Creating the an artifact using an existing garbage image directory is
@@ -202,13 +220,13 @@ class FileVolumeArtifactsTests(VolumeArtifactsTestsMixin, VdsmTestCase):
         with self.fake_env() as env:
             artifacts = env.sd_manifest.get_volume_artifacts(
                 self.img_id, self.vol_id)
+            vol_info = _get_base_raw_create_params(artifacts)
             artifacts._create_metadata_artifact = self.failure
-            self.assertRaises(ExpectedFailure, artifacts.create,
-                              *BASE_RAW_PARAMS)
+            self.assertRaises(ExpectedFailure, artifacts.create, vol_info)
             artifacts = env.sd_manifest.get_volume_artifacts(
                 self.img_id, self.vol_id)
-            self.assertRaises(se.DomainHasGarbage, artifacts.create,
-                              *BASE_RAW_PARAMS)
+            vol_info = _get_base_raw_create_params(artifacts)
+            self.assertRaises(se.DomainHasGarbage, artifacts.create, vol_info)
 
     def validate_new_image_path(self, artifacts, has_md=False,
                                 has_lease=False, has_volume=False):
@@ -244,7 +262,8 @@ class FileVolumeArtifactVisibilityTests(VdsmTestCase):
             self.assertEqual(set(), env.sd_manifest.getAllImages())
             artifacts = env.sd_manifest.get_volume_artifacts(
                 self.img_id, self.vol_id)
-            artifacts.create(*BASE_RAW_PARAMS)
+            vol_info = _get_base_raw_create_params(artifacts)
+            artifacts.create(vol_info)
             self.assertEqual({garbage_img_id}, env.sd_manifest.getAllImages())
             artifacts.commit()
             self.assertEqual({self.img_id}, env.sd_manifest.getAllImages())
@@ -255,7 +274,8 @@ class FileVolumeArtifactVisibilityTests(VdsmTestCase):
             self.assertEqual({}, env.sd_manifest.getAllVolumes())
             artifacts = env.sd_manifest.get_volume_artifacts(
                 self.img_id, self.vol_id)
-            artifacts.create(*BASE_RAW_PARAMS)
+            vol_info = _get_base_raw_create_params(artifacts)
+            artifacts.create(vol_info)
             self.assertEqual({}, env.sd_manifest.getAllVolumes())
             artifacts.commit()
             self.assertIn(self.vol_id, env.sd_manifest.getAllVolumes())

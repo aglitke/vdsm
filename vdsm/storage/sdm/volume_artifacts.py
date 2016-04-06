@@ -76,7 +76,7 @@ class VolumeArtifacts(object):
         self.img_id = img_id
         self.vol_id = vol_id
 
-    def create(self, size, vol_format, disk_type, desc, parent_vol_id):
+    def create(self, vol):
         """
         Create a new image and volume artifacts or a new volume inside an
         existing image.  The result is considered as garbage until you invoke
@@ -190,19 +190,21 @@ class FileVolumeArtifacts(VolumeArtifacts):
     def volume_path(self):
         return os.path.join(self.artifacts_dir, self.vol_id)
 
-    def create(self, size, vol_format, disk_type, desc,
-               parent_vol_id=volume.BLANK_UUID):
+    def create(self, vol):
         """
         Create metadata file artifact, lease file, and volume file on storage.
         """
+        vol_format = volume.name2type(vol.vol_format)
+        parent_vol_id = getattr(vol.parent, 'vol_id', volume.BLANK_UUID)
+
         # XXX: Remove these when support is added:
         if vol_format != volume.RAW_FORMAT:
             raise NotImplementedError("Only raw volumes are supported")
         if parent_vol_id != volume.BLANK_UUID:
-            raise NotImplementedError("parent_vol_id not supported")
+            raise NotImplementedError("parent not supported")
 
         if self.is_image() and parent_vol_id == volume.BLANK_UUID:
-            raise se.InvalidParameterException("parent_vol_id", parent_vol_id)
+            raise se.InvalidParameterException("parent.vol_id", parent_vol_id)
 
         prealloc = self._get_volume_preallocation(vol_format)
         self.sd_manifest.validateCreateVolumeParams(
@@ -211,10 +213,11 @@ class FileVolumeArtifacts(VolumeArtifacts):
         if not self.is_image():
             self._create_image_artifact()
 
-        self._create_metadata_artifact(size, vol_format, prealloc, disk_type,
-                                       desc, parent_vol_id)
+        self._create_metadata_artifact(vol.virtual_size, vol_format, prealloc,
+                                       vol.disk_type, vol.description,
+                                       parent_vol_id)
         self._create_lease_file()
-        self._create_volume_file(vol_format, size)
+        self._create_volume_file(vol_format, vol.virtual_size)
 
     def commit(self):
         try:
