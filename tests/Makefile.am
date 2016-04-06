@@ -139,6 +139,7 @@ test_modules = \
 	storageMailboxTests.py \
 	storageMonitorTests.py \
 	storageServerTests.py \
+	storage_sdm_api_test.py \
 	storage_volume_artifacts_test.py \
 	tasksetTests.py \
 	testlibTests.py \
