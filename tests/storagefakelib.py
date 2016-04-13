@@ -23,7 +23,7 @@ import random
 from contextlib import contextmanager
 from copy import deepcopy
 
-from testlib import recorded
+from testlib import make_file, recorded
 
 from vdsm.storage import exception as se
 
@@ -132,6 +132,9 @@ class FakeLVM(object):
 
         self.lvmd[(vgName, lvName)] = lv_md
         self.vgmd[vgName]['lv_count'] = str(lv_count)
+
+        # Create a regular file so we have a place to write data
+        make_file(self.lvPath(vgName, lvName), int(size))
 
     def activateLVs(self, vgName, lvNames):
         for lv in lvNames:
